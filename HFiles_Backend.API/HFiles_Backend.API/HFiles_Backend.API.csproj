@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="DotNetEnv" Version="3.1.1" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.2" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="7.0.2">
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="7.0.2">
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
+
+		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="7.0.0" />
+		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\HFiles_Backend.Application\HFiles_Backend.Application.csproj" />
+		<ProjectReference Include="..\HFiles_Backend.Domain\HFiles_Backend.Domain.csproj" />
+		<ProjectReference Include="..\HFiles_Backend.Infrastructure\HFiles_Backend.Infrastructure.csproj" />
+	</ItemGroup>
+
+</Project>
