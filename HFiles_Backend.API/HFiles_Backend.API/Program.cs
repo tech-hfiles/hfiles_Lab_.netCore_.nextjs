@@ -5,6 +5,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using DotNetEnv;
 using MySqlConnector;
+using HFiles_Backend.API.Settings;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,6 +51,14 @@ builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMT
 builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
 
 
+// JWT Configuration
+var jwtSettings = new JwtSettings
+{
+    Key = Environment.GetEnvironmentVariable("JWT_KEY")!,
+    Issuer = Environment.GetEnvironmentVariable("JWT_ISSUER")!,
+    Audience = Environment.GetEnvironmentVariable("JWT_AUDIENCE")!,
+    DurationInMinutes = int.Parse(Environment.GetEnvironmentVariable("JWT_DURATION") ?? "30")
+};
 
 
 // Services
@@ -55,6 +67,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IPasswordHasher<LabSignupUser>, PasswordHasher<LabSignupUser>>();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddScoped<JwtTokenService>();
+
+
 
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -65,7 +81,31 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     )
 );
 
+
+// JWT 
+var key = Encoding.ASCII.GetBytes(jwtSettings.Key);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings.Issuer,
+        ValidAudience = jwtSettings.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(key)
+    };
+});
+
 var app = builder.Build();
+
 
 // Migrations
 using (var scope = app.Services.CreateScope())
@@ -101,6 +141,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
+app.UseAuthentication(); 
+app.UseAuthorization(); 
+app.MapControllers();  
 app.Run();

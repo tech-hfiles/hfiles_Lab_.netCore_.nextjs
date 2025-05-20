@@ -1,13 +1,16 @@
 ﻿using HFiles_Backend.API.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // Ensure the user is authenticated
     public class LabUserReportController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -22,6 +25,16 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpPost("upload-batch")]
         public async Task<IActionResult> UploadReports([FromForm] LabUserReportBatchUploadDTO dto)
         {
+            // Get LabId (UserId) from JWT token
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+            {
+                return Unauthorized("Invalid or missing LabId (UserId) claim.");
+            }
+
+            // DEBUG: Return for testing
+            Console.WriteLine("Logged-in LabId: " + labId);
+
             if (dto.Entries == null || dto.Entries.Count == 0)
                 return BadRequest("No entries provided.");
 
@@ -101,6 +114,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     var labUserReport = new LabUserReports
                     {
                         UserId = userId,
+                        LabId = labId, // ✅ NEW: LabId from token
                         Name = entry.Name,
                         EpochTime = epoch
                     };
@@ -158,10 +172,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                 Message = "All reports uploaded successfully.",
                 Results = entryResults
             });
+
+
         }
-
-
-
 
         private int GetReportTypeValue(string? reportType)
         {

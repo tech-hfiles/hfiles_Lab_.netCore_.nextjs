@@ -13,7 +13,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public int Id { get; set; }
         public int UserId { get; set; } 
 
-        //public int LabId { get; set; }
+        public int LabId { get; set; }
 
         public string? Name { get; set; }
 
