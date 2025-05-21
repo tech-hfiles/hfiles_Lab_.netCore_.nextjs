@@ -18,5 +18,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? Name { get; set; }
 
         public long EpochTime { get; set; }
+
+        public int? BranchId { get; set; } = 0;
     }
 }

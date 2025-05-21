@@ -11,25 +11,21 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabSignupUser> LabSignupUsers { get; set; }
         public DbSet<LabOtpEntry> LabOtpEntries { get; set; }
 
-        // Makes HFID unique and no migrations for UserDetails
+        
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
+            // Marks HFID Unique
             modelBuilder.Entity<LabSignupUser>()
                 .HasIndex(u => u.HFID)
                 .IsUnique();
 
             // Mark user_details as read-only (no migrations)
-            modelBuilder.Entity<UserDetails>(entity =>
-            {
-                entity.HasNoKey();
-                entity.ToTable("user_details");
-            });
+            modelBuilder.Entity<UserDetails>().HasNoKey();
         }
 
         public DbSet<UserReports> UserReports { get; set; }
-
         public DbSet<LabUserReports> LabUserReports { get; set; }
 
 

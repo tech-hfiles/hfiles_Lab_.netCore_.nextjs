@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250521054521_ChangeSomeFieldToString")]
+    partial class ChangeSomeFieldToString
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -145,9 +148,6 @@ namespace HFilesBackend.Infrastructure.Migrations
 
                     b.Property<string>("IsActive")
                         .HasColumnType("longtext");
-
-                    b.Property<int>("LabId")
-                        .HasColumnType("int");
 
                     b.Property<string>("MemberId")
                         .HasColumnType("longtext");

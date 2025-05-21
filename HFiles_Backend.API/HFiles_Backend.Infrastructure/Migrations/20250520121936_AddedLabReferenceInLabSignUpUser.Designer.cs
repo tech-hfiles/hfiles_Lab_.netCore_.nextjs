@@ -3,6 +3,7 @@ using System;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace HFilesBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250520121936_AddedLabReferenceInLabSignUpUser")]
+    partial class AddedLabReferenceInLabSignUpUser
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -91,9 +94,6 @@ namespace HFilesBackend.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    b.Property<int?>("BranchId")
-                        .HasColumnType("int");
-
                     b.Property<long>("EpochTime")
                         .HasColumnType("bigint");
 
@@ -143,14 +143,11 @@ namespace HFilesBackend.Infrastructure.Migrations
                     b.Property<double>("FileSize")
                         .HasColumnType("double");
 
-                    b.Property<string>("IsActive")
-                        .HasColumnType("longtext");
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
 
-                    b.Property<int>("LabId")
+                    b.Property<int>("MemberId")
                         .HasColumnType("int");
-
-                    b.Property<string>("MemberId")
-                        .HasColumnType("longtext");
 
                     b.Property<string>("NewIsActive")
                         .HasColumnType("longtext");

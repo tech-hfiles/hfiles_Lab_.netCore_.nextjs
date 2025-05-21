@@ -7,5 +7,6 @@
         public string? Name { get; set; }
         public string? ReportType { get; set; }
         public List<IFormFile> ReportFiles { get; set; } = new();
+        public int? BranchId { get; set; }
     }
 }
