@@ -78,6 +78,7 @@ const page = () => {
             <button className="bg-yellow-300 hover:bg-yellow-400 px-4 py-2 rounded flex items-center gap-2 border w-full sm:w-auto justify-center">
               <FontAwesomeIcon icon={faUserPlus} size="sm" />
               <span>Add Branch</span>
+              
             </button>
           </div>
         </div>
