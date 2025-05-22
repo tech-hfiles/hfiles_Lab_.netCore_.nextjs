@@ -13,12 +13,15 @@ public class JwtTokenService
         _jwtSettings = jwtSettings;
     }
 
-    public string GenerateToken(int userId, string email)
+    // Generate token after LabAdmin login (single token approach)
+    public string GenerateToken(int userId, string email, int labAdminId, string role)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, email),
-            new Claim("UserId", userId.ToString())
+            new Claim("UserId", userId.ToString()),
+            new Claim("LabAdminId", labAdminId.ToString()),
+            new Claim("Role", role)
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));

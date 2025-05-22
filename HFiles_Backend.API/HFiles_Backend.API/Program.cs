@@ -42,14 +42,12 @@ catch (Exception ex)
 
 builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 
-
 // Load .env and inject into SMTP Configuration
 builder.Configuration["Smtp:Host"] = Environment.GetEnvironmentVariable("SMTP_HOST");
 builder.Configuration["Smtp:Port"] = Environment.GetEnvironmentVariable("SMTP_PORT");
 builder.Configuration["Smtp:Username"] = Environment.GetEnvironmentVariable("SMTP_USER");
 builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMTP_PASS");
 builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
-
 
 // JWT Configuration
 var jwtSettings = new JwtSettings
@@ -60,17 +58,24 @@ var jwtSettings = new JwtSettings
     DurationInMinutes = int.Parse(Environment.GetEnvironmentVariable("JWT_DURATION") ?? "30")
 };
 
+// Enable session storage
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30); // Session timeout
+    options.Cookie.HttpOnly = true; // Secure session cookie
+    options.Cookie.IsEssential = true; // Make session mandatory
+});
 
 // Services
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IPasswordHasher<LabSignupUser>, PasswordHasher<LabSignupUser>>();
+builder.Services.AddScoped<IPasswordHasher<LabAdmin>, PasswordHasher<LabAdmin>>();
 builder.Services.AddScoped<EmailService>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddScoped<JwtTokenService>();
-
-
 
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -81,8 +86,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     )
 );
 
-
-// JWT 
+// JWT Authentication
 var key = Encoding.ASCII.GetBytes(jwtSettings.Key);
 
 builder.Services.AddAuthentication(options =>
@@ -106,13 +110,11 @@ builder.Services.AddAuthentication(options =>
 
 var app = builder.Build();
 
-
 // Migrations
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Debugging output before migration
     Console.WriteLine("MIGRATION DB_HOST: " + Environment.GetEnvironmentVariable("DB_HOST"));
     Console.WriteLine("MIGRATION DB_USER: " + Environment.GetEnvironmentVariable("DB_USER"));
 
@@ -132,7 +134,6 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-
 // Middleware
 if (app.Environment.IsDevelopment())
 {
@@ -141,7 +142,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseAuthentication(); 
-app.UseAuthorization(); 
-app.MapControllers();  
+app.UseSession();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
 app.Run();

@@ -75,5 +75,62 @@ namespace HFiles_Backend.API.Controllers.Labs
                 HFID = branchUser.HFID
             });
         }
+
+
+        [HttpGet]
+        [Authorize]
+        public async Task<IActionResult> GetLabBranches()
+        {
+            // Extract LabId from JWT token
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+            {
+                return Unauthorized("Invalid or missing LabId claim.");
+            }
+
+            // Fetch details of logged-in lab
+            var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
+            if (loggedInLab == null)
+            {
+                return NotFound($"Lab with ID {labId} not found.");
+            }
+
+            // Determine the main lab ID
+            int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
+
+            // Fetch the main lab details
+            var mainLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == mainLabId);
+            if (mainLab == null)
+            {
+                return NotFound($"Main lab with ID {mainLabId} not found.");
+            }
+
+            // Retrieve all branches belonging to the main lab
+            var branches = await _context.LabSignupUsers
+                .Where(l => l.LabReference == mainLabId)
+                .ToListAsync();
+
+            // Build flat response list
+            var result = new List<object>();
+
+            // Add main lab
+            result.Add(new
+            {
+                labId = mainLab.Id,
+                labName = mainLab.LabName,
+                labType = "mainLab"
+            });
+
+            // Add branches
+            result.AddRange(branches.Select(branch => new
+            {
+                labId = branch.Id,
+                labName = branch.LabName,
+                labType = "branch"
+            }));
+
+            return Ok(result);
+        }
+
     }
 }

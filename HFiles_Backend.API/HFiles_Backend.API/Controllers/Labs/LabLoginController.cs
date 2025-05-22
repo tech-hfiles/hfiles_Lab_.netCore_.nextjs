@@ -16,21 +16,18 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly AppDbContext _context;
         private readonly EmailService _emailService;
         private readonly IPasswordHasher<LabSignupUser> _passwordHasher;
-        private readonly JwtTokenService _jwtTokenService;
 
         public LabLoginController(
             AppDbContext context,
             EmailService emailService,
-            IPasswordHasher<LabSignupUser> passwordHasher,
-            JwtTokenService jwtTokenService)
+            IPasswordHasher<LabSignupUser> passwordHasher)
         {
             _context = context;
             _emailService = emailService;
             _passwordHasher = passwordHasher;
-            _jwtTokenService = jwtTokenService;
         }
 
-        // Send OTP
+        // Sends OTP
         [HttpPost("send-otp")]
         public async Task<IActionResult> SendOtp([FromBody] EmailRequestDto dto)
         {
@@ -68,7 +65,9 @@ namespace HFiles_Backend.API.Controllers.Labs
             return Ok(new { message = "OTP sent successfully." });
         }
 
-        // Login via OTP
+
+
+        // Login via Email + OTP
         [HttpPost("login-otp")]
         public async Task<IActionResult> LoginViaOtp([FromBody] OtpLoginDto dto)
         {
@@ -86,14 +85,13 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (otpEntry.OtpCode != dto.Otp)
                 return BadRequest("Invalid OTP.");
 
-            var token = _jwtTokenService.GenerateToken(user.Id, user.Email);
+            // Store UserId & Email temporarily (session storage)
+            HttpContext.Session.SetInt32("UserId", user.Id);
+            HttpContext.Session.SetString("Email", user.Email);
 
-            return Ok(new
-            {
-                message = "Login successful via OTP.",
-                token
-            });
+            return Ok(new { message = "Lab login successful, proceed to LabAdmin login." });
         }
+
 
         // Login via Email + Password
         [HttpPost("login-password")]
@@ -106,13 +104,12 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (result == PasswordVerificationResult.Failed)
                 return BadRequest("Incorrect password.");
 
-            var token = _jwtTokenService.GenerateToken(user.Id, user.Email);
+            // Store UserId & Email temporarily (session storage)
+            HttpContext.Session.SetInt32("UserId", user.Id);
+            HttpContext.Session.SetString("Email", user.Email);
 
-            return Ok(new
-            {
-                message = "Login successful via password.",
-                token
-            });
+            return Ok(new { message = "Lab login successful, proceed to LabAdmin login." });
         }
+
     }
 }

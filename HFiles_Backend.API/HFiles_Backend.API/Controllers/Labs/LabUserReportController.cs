@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Newtonsoft.Json;
+
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -59,6 +61,10 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpPost("upload-batch")]
         public async Task<IActionResult> UploadReports([FromForm] LabUserReportBatchUploadDTO dto)
         {
+
+            Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
+
+
             // Get LabId (UserId) from JWT token
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
@@ -146,6 +152,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         LabId = labId
                     };
 
+
                     var labUserReport = new LabUserReports
                     {
                         UserId = userId,
@@ -154,6 +161,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                         Name = entry.Name,
                         EpochTime = epoch
                     };
+
+                    
 
                     _context.UserReports.Add(userReport);
                     _context.LabUserReports.Add(labUserReport);
@@ -184,7 +193,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
 
             await _context.SaveChangesAsync();
-
+           
             if (successfulUploads == 0)
             {
                 return BadRequest(new
@@ -208,6 +217,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 Message = "All reports uploaded successfully.",
                 Results = entryResults
             });
+
+            
         }
 
         
