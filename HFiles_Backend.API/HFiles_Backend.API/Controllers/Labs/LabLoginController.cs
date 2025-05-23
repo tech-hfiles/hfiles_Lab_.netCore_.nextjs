@@ -89,7 +89,11 @@ namespace HFiles_Backend.API.Controllers.Labs
             HttpContext.Session.SetInt32("UserId", user.Id);
             HttpContext.Session.SetString("Email", user.Email);
 
-            return Ok(new { message = "Lab login successful, proceed to LabAdmin login." });
+            user.IsSuperAdmin = true;
+            await _context.SaveChangesAsync();
+
+
+            return Ok(new { message = "Lab login successful, proceed to LabAdmin login.", IsSuperAdmin = user.IsSuperAdmin });
         }
 
 
@@ -108,7 +112,10 @@ namespace HFiles_Backend.API.Controllers.Labs
             HttpContext.Session.SetInt32("UserId", user.Id);
             HttpContext.Session.SetString("Email", user.Email);
 
-            return Ok(new { message = "Lab login successful, proceed to LabAdmin login." });
+            user.IsSuperAdmin = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Lab login successful, proceed to LabAdmin login.", IsSuperAdmin = user.IsSuperAdmin });
         }
 
     }

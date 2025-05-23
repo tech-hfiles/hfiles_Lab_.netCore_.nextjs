@@ -67,8 +67,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 PhoneNumber = dto.PhoneNumber,
                 Pincode = dto.Pincode,
                 CreatedAtEpoch = epochTime,
-                HFID = hfid
+                HFID = hfid,
+                IsSuperAdmin = false
             };
+
 
             user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
@@ -130,7 +132,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return StatusCode(500, $"User created, but failed to send emails: {ex.Message}");
             }
 
-            return Ok("User registered successfully.");
+            return Ok(new { message = "User registered successfully.", IsSuperAdmin = user.IsSuperAdmin });
+
         }
     }
 }
