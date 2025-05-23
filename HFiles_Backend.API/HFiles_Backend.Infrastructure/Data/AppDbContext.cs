@@ -26,8 +26,11 @@ namespace HFiles_Backend.Infrastructure.Data
         }
 
         public DbSet<UserReports> UserReports { get; set; }
+        public DbSet<UserDetails> UserDetails { get; set; } // No migrations
         public DbSet<LabUserReports> LabUserReports { get; set; }
         public DbSet<LabAdmin> LabAdmins { get; set; }
+        public DbSet<LabMember> LabMembers { get; set; }
+        
 
 
     }

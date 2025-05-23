@@ -37,12 +37,16 @@ namespace HFiles_Backend.Controllers
             var email = HttpContext.Session.GetString("Email");
 
             if (userId == null || string.IsNullOrEmpty(email))
-                return Unauthorized("Lab login details missing. Please login as Lab first.");
+                return Unauthorized("Lab details missing. Please signup as Lab first.");
 
             // Fetch Lab details using LabId
             var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == userId.Value);
             if (lab == null)
                 return NotFound($"Lab with ID {userId.Value} not found.");
+
+            // Check if this lab already has a Super Admin
+            if (lab.IsSuperAdmin)
+                return BadRequest($"A Super Admin already exists for the lab {lab.LabName}.");
 
             // Check if the lab is a branch (LabReference ≠ 0)
             if (lab.LabReference != 0)
@@ -53,13 +57,6 @@ namespace HFiles_Backend.Controllers
                 {
                     return BadRequest($"{lab.LabName} is a branch of {parentLab.LabName} and cannot create a Super Admin.");
                 }
-            }
-
-            // Check if a Super Admin already exists for this LabId
-            var existingSuperAdmin = await _context.LabAdmins.AnyAsync(admin => admin.LabId == userId.Value && admin.IsMain == 1);
-            if (existingSuperAdmin)
-            {
-                return BadRequest($"A Super Admin already exists for {lab.LabName}.");
             }
 
             // Fetch UserDetails using HFID
@@ -77,6 +74,11 @@ namespace HFiles_Backend.Controllers
             };
 
             _context.LabAdmins.Add(newAdmin);
+
+            // Update IsSuperAdmin to true after adding the admin
+            lab.IsSuperAdmin = true;
+            _context.LabSignupUsers.Update(lab);
+
             await _context.SaveChangesAsync();
 
             // Generate Token After Successful Registration
@@ -84,16 +86,18 @@ namespace HFiles_Backend.Controllers
 
             return Ok(new
             {
-                Message = "Lab admin created successfully.",
+                Message = "Lab admin created successfully, and lab IsSuperAdmin updated.",
                 UserId = newAdmin.UserId,
                 LabId = userId.Value,
                 LabName = lab.LabName,
                 LabEmail = email,
                 LabAdminId = newAdmin.Id,
                 Role = dto.Role,
-                Token = token
+                Token = token,
+                IsSuperAdmin = lab.IsSuperAdmin 
             });
         }
+
 
 
 
@@ -117,7 +121,7 @@ namespace HFiles_Backend.Controllers
                 .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
 
             if (userDetails == null)
-                return NotFound($"No Super Admin found with HFID {dto.HFID}.");
+                return NotFound($"No Super Admin/Admin/Member found with HFID {dto.HFID}.");
 
             // Validate Super Admin Login
             if (dto.Role == "Super Admin")
@@ -138,17 +142,18 @@ namespace HFiles_Backend.Controllers
             // Validate Admin/Member Login
             else if (dto.Role == "Admin" || dto.Role == "Member")
             {
-                //var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
-                //if (member == null)
-                //    return Unauthorized($"{dto.Role} not found. Please register first.");
+                var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
+                if (member == null)
+                    return Unauthorized($"{dto.Role} not found. Please register first.");
 
-                //if (!_passwordHasher.VerifyHashedPassword(member, member.PasswordHash, dto.Password)
-                //    .Equals(PasswordVerificationResult.Success))
-                //    return Unauthorized("Invalid password.");
+                if (!_passwordHasher.VerifyHashedPassword(null, member.PasswordHash, dto.Password)
+                    .Equals(PasswordVerificationResult.Success))
+                    return Unauthorized("Invalid password.");
 
-                //// Generate Token After Successful Login
-                //var token = _jwtTokenService.GenerateToken(member.UserId, email, member.Id, dto.Role);
-                //return Ok(new { Message = "Login successful.", Token = token });
+
+                // Generate Token After Successful Login
+                var token = _jwtTokenService.GenerateToken(member.UserId, email, member.Id, dto.Role);
+                return Ok(new { Message = "Login successful.", Token = token });
             }
 
             return BadRequest("Invalid role specified.");

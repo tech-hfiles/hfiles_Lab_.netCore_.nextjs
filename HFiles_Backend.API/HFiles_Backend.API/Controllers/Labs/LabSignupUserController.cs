@@ -16,12 +16,12 @@ namespace HFiles_Backend.API.Controllers.Labs
     {
         private readonly AppDbContext _context;
         private readonly IPasswordHasher<LabSignupUser> _passwordHasher;
-        private readonly EmailService _emailService; 
+        private readonly EmailService _emailService;
 
         public LabSignupUserController(
             AppDbContext context,
             IPasswordHasher<LabSignupUser> passwordHasher,
-            EmailService emailService) 
+            EmailService emailService)
         {
             _context = context;
             _passwordHasher = passwordHasher;
@@ -71,17 +71,19 @@ namespace HFiles_Backend.API.Controllers.Labs
                 IsSuperAdmin = false
             };
 
-
             user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
-
 
             // After user is added and saved
             _context.LabSignupUsers.Add(user);
             await _context.SaveChangesAsync();
 
+            // Store UserId & Email temporarily (session storage) ✅
+            HttpContext.Session.SetInt32("UserId", user.Id);
+            HttpContext.Session.SetString("Email", user.Email);
+
             // Delete used OTP entry
             _context.LabOtpEntries.Remove(otpEntry);
-            await _context.SaveChangesAsync();  
+            await _context.SaveChangesAsync();
 
             // Send Emails
             var userEmailBody = $@"
@@ -104,7 +106,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 </body>
                 </html>";
 
-
             var adminEmailBody = $@"
                 <html>
                 <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
@@ -121,7 +122,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 </body>
                 </html>";
 
-
             try
             {
                 await _emailService.SendEmailAsync(dto.Email, "Hfiles Registration Received", userEmailBody);
@@ -133,7 +133,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
 
             return Ok(new { message = "User registered successfully.", IsSuperAdmin = user.IsSuperAdmin });
-
         }
     }
 }

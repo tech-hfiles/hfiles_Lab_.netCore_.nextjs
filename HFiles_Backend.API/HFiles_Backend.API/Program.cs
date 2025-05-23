@@ -85,6 +85,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<IPasswordHasher<LabSignupUser>, PasswordHasher<LabSignupUser>>();
 builder.Services.AddScoped<IPasswordHasher<LabAdmin>, PasswordHasher<LabAdmin>>();
+builder.Services.AddScoped<IPasswordHasher<LabMember>, PasswordHasher<LabMember>>();
 builder.Services.AddScoped<EmailService>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddScoped<JwtTokenService>();
