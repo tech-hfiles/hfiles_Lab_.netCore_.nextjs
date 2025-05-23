@@ -1,4 +1,6 @@
-﻿namespace HFiles_Backend.API.DTOs.Labs
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace HFiles_Backend.API.DTOs.Labs
 {
     public class LabUserReportUploadDTO
     {

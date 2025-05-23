@@ -113,24 +113,68 @@ namespace HFiles_Backend.API.Controllers.Labs
             // Build flat response list
             var result = new List<object>();
 
-            // Add main lab
+            // Add main lab with HFID, Email, and Phone Number
             result.Add(new
             {
                 labId = mainLab.Id,
                 labName = mainLab.LabName,
+                HFID = mainLab.HFID,
+                Email = mainLab.Email,
+                PhoneNumber = mainLab.PhoneNumber, 
                 labType = "mainLab"
             });
 
-            // Add branches
+            // Add branches with HFID and Email (No Phone Number)
             result.AddRange(branches.Select(branch => new
             {
                 labId = branch.Id,
                 labName = branch.LabName,
+                HFID = branch.HFID,
+                Email = branch.Email,
                 labType = "branch"
             }));
 
             return Ok(result);
         }
+
+
+        [HttpDelete("delete/{branchId}")]
+        [Authorize]
+        public async Task<IActionResult> DeleteBranch(int branchId)
+        {
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+            {
+                return Unauthorized("Invalid or missing LabId claim.");
+            }
+
+            // Fetch the branch details
+            var branch = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == branchId);
+            if (branch == null)
+            {
+                return NotFound($"Branch with ID {branchId} not found.");
+            }
+
+            // Ensure the user is deleting a valid branch, not the main lab
+            if (branch.LabReference == 0)
+            {
+                return BadRequest("Cannot delete the main lab. Only branches can be deleted.");
+            }
+
+            // Ensure the logged-in lab is the owner of the branch
+            if (branch.LabReference != labId)
+            {
+                return Unauthorized("You do not have permission to delete this branch.");
+            }
+
+            // Delete the branch from the database
+            _context.LabSignupUsers.Remove(branch);
+            await _context.SaveChangesAsync();
+
+            return Ok($"Branch '{branch.LabName}' (ID: {branchId}) successfully deleted.");
+        }
+
+
 
     }
 }

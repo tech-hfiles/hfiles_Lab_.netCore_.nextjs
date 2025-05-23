@@ -57,6 +57,9 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
+
+
+
         // Save Lab Reports to Database
         [HttpPost("upload-batch")]
         public async Task<IActionResult> UploadReports([FromForm] LabUserReportBatchUploadDTO dto)
@@ -135,6 +138,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         await file.CopyToAsync(stream);
                     }
 
+                    // Step 1: Create and save UserReport
                     var userReport = new UserReports
                     {
                         UserId = userId,
@@ -152,22 +156,30 @@ namespace HFiles_Backend.API.Controllers.Labs
                         LabId = labId
                     };
 
+                    _context.UserReports.Add(userReport);
+                    await _context.SaveChangesAsync(); // Save to generate userReport.Id
 
+                    // Step 2: Create and save LabUserReport
                     var labUserReport = new LabUserReports
                     {
                         UserId = userId,
                         LabId = labId,
-                        BranchId = entry.BranchId, // From frontend
+                        BranchId = entry.BranchId,
                         Name = entry.Name,
                         EpochTime = epoch
                     };
 
-                    
-
-                    _context.UserReports.Add(userReport);
                     _context.LabUserReports.Add(labUserReport);
+                    await _context.SaveChangesAsync(); // Save to generate labUserReport.Id
+
+                    // Step 3: Link LabUserReportId back to UserReport
+                    userReport.LabUserReportId = labUserReport.Id;
+                    _context.UserReports.Update(userReport); // EF tracks this but safe to explicitly update
+                    await _context.SaveChangesAsync();
+
                     uploadedFiles.Add(fileName);
                 }
+
 
                 if (uploadedFiles.Any())
                 {
@@ -216,12 +228,13 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 Message = "All reports uploaded successfully.",
                 Results = entryResults
-            });
-
-            
+            });            
         }
 
-        
+
+
+
+
         // Fetch All Reports of Selected User
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetLabUserReportsByUserId(int userId)
@@ -237,25 +250,34 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (currentLab == null)
                 return NotFound($"LabId {labId} not found.");
 
+            // Fetch UserDetails 
+            var userDetails = await _context.Set<UserDetails>()
+                .Select(u => new { u.user_id, u.user_membernumber, u.user_firstname, u.user_lastname, u.user_email, u.user_image })
+                .FirstOrDefaultAsync(u => u.user_id == userId);
+
+            if (userDetails == null)
+                return NotFound($"User details not found for UserId {userId}.");
+
+            // Generate Full Name
+            string fullName = $"{userDetails.user_firstname} {userDetails.user_lastname}".Trim();
+
             // Find related labs
             List<int> relatedLabIds;
             if (currentLab.LabReference == 0)
             {
-                // If main lab, get all its branches
                 relatedLabIds = await _context.LabSignupUsers
                     .Where(lsu => lsu.LabReference == labId)
                     .Select(lsu => lsu.Id)
                     .ToListAsync();
-                relatedLabIds.Add(labId); 
+                relatedLabIds.Add(labId);
             }
             else
             {
-                // If branch, get all other branches + main lab
                 relatedLabIds = await _context.LabSignupUsers
                     .Where(lsu => lsu.LabReference == currentLab.LabReference)
                     .Select(lsu => lsu.Id)
                     .ToListAsync();
-                relatedLabIds.Add(currentLab.LabReference); 
+                relatedLabIds.Add(currentLab.LabReference);
             }
 
             // Fetch reports for all related labs
@@ -272,12 +294,15 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return NotFound($"No reports found for UserId {userId} in related labs.");
 
             // Map response
-            var responseData = userReports.Select((userReport, index) =>
+            var responseData = userReports.Select(userReport =>
             {
-                var matchedLabReport = labUserReports.ElementAtOrDefault(index);
+                var matchedLabReport = labUserReports
+                    .FirstOrDefault(lur => lur.UserId == userReport.UserId && lur.LabId == userReport.LabId);
 
                 int branchId = matchedLabReport?.LabId ?? 0;
                 long epochTime = matchedLabReport?.EpochTime ?? 0;
+                int userReportId = userReport.Id;
+                int labUserReportId = userReport.LabUserReportId ?? 0;
 
                 var branchEntry = _context.LabSignupUsers.FirstOrDefault(lsu => lsu.Id == branchId);
                 string branchName = branchEntry?.LabName ?? "Unknown";
@@ -288,22 +313,41 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 return new
                 {
+                    Id = userReportId,
                     filename = userReport.ReportName,
                     fileURL = userReport.ReportUrl,
                     labName = currentLab.LabName,
                     branchName = branchName,
                     epochTime = epochTime,
-                    createdDate = createdDate
+                    createdDate = createdDate,
+                    LabUserReportId = labUserReportId
                 };
             }).ToList();
 
-            return Ok(responseData);
+            // Structured response 
+            return Ok(new
+            {
+                Message = "Reports fetched successfully.",
+
+                UserDetails = new
+                {
+                    UserId = userId,
+                    HFID = userDetails.user_membernumber,
+                    FullName = fullName,
+                    Email = userDetails.user_email,
+                    UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image
+                },
+
+                Reports = responseData
+            });
         }
 
 
 
-        // Fetch All Distinct Users 
-        [HttpGet("lab/reports")]
+
+
+        // Fetch All Distinct Users for All Dates
+        [HttpGet("lab/all-reports")]
         public async Task<IActionResult> GetLabUserReports()
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
@@ -331,14 +375,15 @@ namespace HFiles_Backend.API.Controllers.Labs
                 .ToDictionaryAsync(u => u.user_id, u => new
                 {
                     HFID = u.user_membernumber,
-                    Name = $"{u.user_firstname} {u.user_lastname}"
+                    Name = $"{u.user_firstname} {u.user_lastname}",
+                    UserId = u.user_id
                 });
 
             // Fetch latest ReportId per UserId from `UserReports`
             var reportIdsDict = await _context.UserReports
                 .Where(ur => userIds.Contains(ur.UserId) && ur.LabId == labId)
                 .GroupBy(ur => ur.UserId)
-                .Select(g => new { UserId = g.Key, ReportId = g.OrderByDescending(ur => ur.CreatedDate).First().ReportId }) 
+                .Select(g => new { UserId = g.Key, ReportId = g.OrderByDescending(ur => ur.CreatedDate).First().ReportId })
                 .ToDictionaryAsync(x => x.UserId, x => x.ReportId);
 
 
@@ -348,19 +393,170 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var userDetail = userDetailsDict.GetValueOrDefault(report.UserId);
                 if (userDetail == null) return null;
 
-                var reportId = reportIdsDict.GetValueOrDefault(report.UserId, 0); 
+                var reportId = reportIdsDict.GetValueOrDefault(report.UserId, 0);
 
                 return new
                 {
                     HFID = userDetail.HFID,
                     Name = userDetail.Name,
-                    ReportType = ReverseReportTypeMapping(reportId), 
+                    UserId = userDetail.UserId,
+                    ReportType = ReverseReportTypeMapping(reportId),
                     Date = DateTimeOffset.FromUnixTimeSeconds(report.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
                 };
             }).Where(res => res != null).ToList();
 
             return Ok(responseData);
         }
+
+
+
+
+
+        // Fetch All Distinct Users Based on Selection of Date
+        [HttpGet("lab/reports")]
+        public async Task<IActionResult> GetLabUserReports([FromQuery] string? startDate, [FromQuery] string? endDate)
+        {
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+            {
+                return Unauthorized("Invalid or missing LabId (UserId) claim.");
+            }
+
+            long startEpoch, endEpoch;
+
+            // Validate and convert start & end date to epoch range
+            if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
+            {
+                if (!DateTime.TryParseExact(startDate, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var selectedStartDate) ||
+                    !DateTime.TryParseExact(endDate, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var selectedEndDate))
+                {
+                    return BadRequest("Invalid date format. Use dd/MM/yyyy for both start and end dates.");
+                }
+
+                startEpoch = new DateTimeOffset(selectedStartDate.Date).ToUnixTimeSeconds();
+                endEpoch = new DateTimeOffset(selectedEndDate.Date.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
+            }
+            else
+            {
+                // Default to current and previous day if no date range is provided
+                var today = DateTime.UtcNow.Date;
+                var yesterday = today.AddDays(-1);
+                startEpoch = new DateTimeOffset(yesterday).ToUnixTimeSeconds();
+                endEpoch = new DateTimeOffset(today.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
+            }
+
+            // Fetch latest report per user within the selected date range
+            var latestReports = await _context.LabUserReports
+                .Where(lur => lur.LabId == labId && lur.EpochTime >= startEpoch && lur.EpochTime <= endEpoch)
+                .GroupBy(lur => lur.UserId)
+                .Select(g => g.OrderByDescending(r => r.EpochTime).First())
+                .ToListAsync();
+
+            if (!latestReports.Any())
+                return NotFound($"No reports found for LabId {labId} within the selected date range.");
+
+            var userIds = latestReports.Select(lr => lr.UserId).ToList();
+
+            var userDetailsDict = await _context.Set<UserDetails>()
+                .Where(u => userIds.Contains(u.user_id))
+                .ToDictionaryAsync(u => u.user_id, u => new
+                {
+                    HFID = u.user_membernumber,
+                    Name = $"{u.user_firstname} {u.user_lastname}",
+                    UserId = u.user_id
+                });
+
+            var reportIdsDict = await _context.UserReports
+                .Where(ur => userIds.Contains(ur.UserId) && ur.LabId == labId)
+                .GroupBy(ur => ur.UserId)
+                .Select(g => new
+                {
+                    UserId = g.Key,
+                    ReportId = g.OrderByDescending(ur => ur.CreatedDate).First().ReportId
+                })
+                .ToDictionaryAsync(x => x.UserId, x => x.ReportId);
+
+            var responseData = latestReports.Select(report =>
+            {
+                var userDetail = userDetailsDict.GetValueOrDefault(report.UserId);
+                if (userDetail == null) return null;
+
+                var reportId = reportIdsDict.GetValueOrDefault(report.UserId, 0);
+
+                return new
+                {
+                    HFID = userDetail.HFID,
+                    Name = userDetail.Name,
+                    UserId = userDetail.UserId,
+                    ReportType = ReverseReportTypeMapping(reportId),
+                    Date = DateTimeOffset.FromUnixTimeSeconds(report.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                };
+            }).Where(x => x != null).ToList();
+
+            return Ok(responseData);
+        }
+
+
+
+
+
+        // Resend Reports using LabUserReportID
+        [HttpPost("resend-report")]
+        public async Task<IActionResult> ResendReport([FromBody] LabResendReportDto dto)
+        {
+            Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
+
+            // Get LabId from JWT token
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+            {
+                return Unauthorized("Invalid or missing LabId (UserId) claim.");
+            }
+
+            if (dto.Ids == null || dto.Ids.Count == 0)
+                return BadRequest("No LabUserReport IDs provided for resending.");
+
+            var updatedReports = new List<object>();
+
+            foreach (var labUserReportId in dto.Ids)
+            {
+                var labUserReport = await _context.LabUserReports
+                    .FirstOrDefaultAsync(lur => lur.Id == labUserReportId && lur.LabId == labId);
+
+                if (labUserReport == null)
+                {
+                    updatedReports.Add(new
+                    {
+                        Id = labUserReportId,
+                        Status = "Failed",
+                        Reason = $"LabUserReport entry not found for Id {labUserReportId} in LabId {labId}."
+                    });
+                    continue;
+                }
+
+                // Increment resend count
+                labUserReport.Resend += 1;
+                _context.LabUserReports.Update(labUserReport);
+
+                updatedReports.Add(new
+                {
+                    Id = labUserReportId,
+                    Status = "Success",
+                    NewResendCount = labUserReport.Resend,
+                    EpochTime = labUserReport.EpochTime
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Message = "Selected LabUserReports successfully updated.",
+                Results = updatedReports
+            });
+        }
+
+
     }
 
 }
