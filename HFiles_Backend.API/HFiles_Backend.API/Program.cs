@@ -63,9 +63,20 @@ var jwtSettings = new JwtSettings
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30); // Session timeout
-    options.Cookie.HttpOnly = true; // Secure session cookie
-    options.Cookie.IsEssential = true; // Make session mandatory
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
+// Add CORS policy for frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
 });
 
 // Services
@@ -147,7 +158,11 @@ app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseStaticFiles();
+// Enable CORS
+app.UseCors("AllowFrontend");
+
+// Serve static files 
+app.UseStaticFiles(); 
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(
