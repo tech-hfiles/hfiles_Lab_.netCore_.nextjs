@@ -9,6 +9,7 @@ using HFiles_Backend.API.Settings;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -145,5 +146,14 @@ app.UseHttpsRedirection();
 app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads")),
+    RequestPath = "/uploads"
+});
+
 app.MapControllers();
 app.Run();
