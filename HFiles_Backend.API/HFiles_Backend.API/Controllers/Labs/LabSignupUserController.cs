@@ -77,10 +77,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             _context.LabSignupUsers.Add(user);
             await _context.SaveChangesAsync();
 
-            // Store UserId & Email temporarily (session storage) 
-            HttpContext.Session.SetInt32("UserId", user.Id);
-            HttpContext.Session.SetString("Email", user.Email);
-
             // Delete used OTP entry
             _context.LabOtpEntries.Remove(otpEntry);
             await _context.SaveChangesAsync();

@@ -11,7 +11,7 @@ using HFiles_Backend.Infrastructure.Data;
 namespace HFiles_Backend.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabAdminController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -26,7 +26,7 @@ namespace HFiles_Backend.Controllers
         }
 
         // Create Lab Admin
-        [HttpPost("create")]
+        [HttpPost("LabAdmin/create")]
         public async Task<IActionResult> CreateLabAdmin([FromBody] LabAdminDto dto)
         {
             if (!ModelState.IsValid)
@@ -37,7 +37,7 @@ namespace HFiles_Backend.Controllers
             var email = HttpContext.Session.GetString("Email");
 
             if (userId == null || string.IsNullOrEmpty(email))
-                return Unauthorized("Lab details missing. Please signup as Lab first.");
+                return BadRequest("UserId and Email not getting fetched from Session!");
 
             // Fetch Lab details using LabId
             var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == userId.Value);
@@ -102,8 +102,8 @@ namespace HFiles_Backend.Controllers
 
 
 
-        // Login Lab Admin 
-        [HttpPost("login")]
+        // Login Lab Admin and Lab Members
+        [HttpPost("LabUser/login")]
         public async Task<IActionResult> LabAdminLogin([FromBody] LabAdminLoginDto dto)
         {
             if (!ModelState.IsValid)
@@ -158,6 +158,59 @@ namespace HFiles_Backend.Controllers
 
             return BadRequest("Invalid role specified.");
         }
+
+
+
+
+
+        [HttpGet("LabUsers")]
+        public async Task<IActionResult> GetAllLabUsers()
+        {
+            // Extract LabId from JWT token
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId in token.");
+
+            // Fetch all Admins for the Lab
+            var admins = await _context.LabAdmins
+                .Where(a => a.LabId == labId)
+                .Select(a => new
+                {
+                    AdminId = a.Id,
+                    UserId = a.UserId,
+                    LabId = a.LabId,
+                    Role = "Super Admin",
+                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(a.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                })
+                .ToListAsync();
+
+            // Fetch all Members for the Lab
+            var members = await _context.LabMembers
+                .Where(m => m.LabId == labId)
+                .Select(m => new
+                {
+                    MemberId = m.Id,
+                    UserId = m.UserId,
+                    LabId = m.LabId,
+                    Role = "Member",
+                    CreatedBy = m.CreatedBy,
+                    DeletedBy = m.DeletedBy,
+                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                })
+                .ToListAsync();
+
+            if (!admins.Any() && !members.Any())
+                return NotFound($"No admins or members found for LabId {labId}.");
+
+            return Ok(new
+            {
+                Message = "Lab users fetched successfully.",
+                LabId = labId,
+                Admins = admins,
+                Members = members
+            });
+        }
+
 
     }
 }
