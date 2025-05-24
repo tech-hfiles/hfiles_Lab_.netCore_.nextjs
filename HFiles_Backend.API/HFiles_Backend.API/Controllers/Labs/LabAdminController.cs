@@ -76,15 +76,8 @@ namespace HFiles_Backend.Controllers
             return Ok(new
             {
                 Message = "Lab admin created successfully, and lab IsSuperAdmin updated.",
-                UserId = newAdmin.UserId,
                 Username = $"{userDetails.user_firstname} {userDetails.user_lastname}",
-                LabId = userId,
-                LabName = lab.LabName,
-                LabEmail = email,
-                LabAdminId = newAdmin.Id,
-                Role = dto.Role,
-                Token = token,
-                IsSuperAdmin = lab.IsSuperAdmin                
+                Token = token            
             });
         }
 
