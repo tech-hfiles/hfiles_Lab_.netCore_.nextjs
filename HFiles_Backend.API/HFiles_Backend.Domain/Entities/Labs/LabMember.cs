@@ -15,6 +15,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? PasswordHash { get; set; } 
         public int CreatedBy { get; set; } 
         public int DeletedBy { get; set; } = 0; 
-        public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); 
+        public long EpochTime { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        public int PromotedBy { get; set; } = 0;
     }
 }

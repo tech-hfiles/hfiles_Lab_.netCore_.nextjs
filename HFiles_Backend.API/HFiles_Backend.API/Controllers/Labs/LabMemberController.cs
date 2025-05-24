@@ -43,7 +43,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             // Fetch CreatedBy (LabAdminId) from JWT Token
             var createdByClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             if (createdByClaim == null || !int.TryParse(createdByClaim.Value, out int createdBy))
-                return Unauthorized("Invalid or missing LabAdminId in token.");
+                return Unauthorized("Invalid or missing LabAdminId in token."); 
 
             // Create and store Member entity
             var newMember = new LabMember
@@ -70,5 +70,109 @@ namespace HFiles_Backend.API.Controllers.Labs
                 EpochTime = newMember.EpochTime
             });
         }
+
+
+
+        // Promote members to Admins API
+        [HttpPost("promote")]
+        public async Task<IActionResult> PromoteMembers([FromBody] LabPromoteMembersDto dto)
+        {
+            if (dto.Ids == null || !dto.Ids.Any())
+                return BadRequest("No member IDs provided for promotion.");
+
+            // Extract LabAdminId from JWT token
+            var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                return Unauthorized("Invalid or missing LabAdminId in token.");
+
+            // Extract Role from JWT token
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+            if (roleClaim == null)
+                return Unauthorized("Invalid or missing Role in token.");
+
+            string promotingRole = roleClaim.Value; 
+
+            var promotedMembers = new List<object>();
+
+            foreach (var memberId in dto.Ids)
+            {
+                var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == memberId);
+                if (member == null)
+                {
+                    promotedMembers.Add(new { Id = memberId, Status = "Failed", Reason = "Member not found" });
+                    continue;
+                }
+
+                // Promote the member to Admin
+                member.Role = "Admin";
+                member.PromotedBy = labAdminId; 
+                _context.LabMembers.Update(member);
+
+                promotedMembers.Add(new
+                {
+                    Id = member.Id,
+                    UserId = member.UserId,
+                    LabId = member.LabId,
+                    NewRole = member.Role,
+                    PromotedBy = labAdminId,
+                    PromotedByRole = promotingRole 
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Message = "Members promoted successfully.",
+                PromotedMembers = promotedMembers
+            });
+        }
+
+
+
+
+        // Delete member
+        [HttpDelete("delete/{id}")]
+        public async Task<IActionResult> DeleteLabMember(int id)
+        {
+            // Find the member
+            var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == id);
+
+            if (member == null)
+                return NotFound("Lab member not found.");
+
+            // Prevent Admins from being deleted
+            if (member.Role == "Admin")
+                return BadRequest("Admin cannot be deleted.");
+
+            // Extract user info from token
+            var deletedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+            if (deletedByIdClaim == null || deletedByRoleClaim == null)
+                return Unauthorized("Token is missing required information.");
+
+            var deletedById = int.Parse(deletedByIdClaim.Value);
+            var deletedByRole = deletedByRoleClaim.Value;
+
+            // Soft delete — update DeletedBy only
+            member.DeletedBy = deletedById;
+            _context.LabMembers.Update(member);
+            await _context.SaveChangesAsync();
+
+            // Return response with who deleted it and their role
+            return Ok(new
+            {
+                Message = "Member marked as deleted successfully.",
+                MemberId = member.Id,
+                DeletedBy = deletedById,
+                DeletedByRole = deletedByRole 
+            });
+        }
+
+
+
+
+
     }
 }

@@ -64,10 +64,14 @@ var jwtSettings = new JwtSettings
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
+    options.IdleTimeout = TimeSpan.FromMinutes(30);  
+    options.Cookie.HttpOnly = true;  
     options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.None;  
+    options.Cookie.SecurePolicy = CookieSecurePolicy.None;  
 });
+
+
 
 // Add CORS policy for frontend
 builder.Services.AddCors(options =>
@@ -76,9 +80,11 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials(); 
     });
 });
+
 
 // Services
 builder.Services.AddControllers();
@@ -187,12 +193,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseSession();
+
+app.UseSession(); 
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Enable CORS
-app.UseCors("AllowFrontend");
+
 
 // Serve static files
 app.UseStaticFiles();

@@ -17,5 +17,7 @@ namespace HFiles_Backend.Application.DTOs.Labs
 
         [Required]
         public string? Password { get; set; }
+        public int? UserId { get; set; } 
+        public string? Email { get; set; } 
     }
 }

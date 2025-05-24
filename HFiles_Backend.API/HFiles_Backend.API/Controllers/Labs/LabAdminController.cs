@@ -32,34 +32,26 @@ namespace HFiles_Backend.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            // Retrieve UserId & Email stored from Lab login
-            var userId = HttpContext.Session.GetInt32("UserId");
-            var email = HttpContext.Session.GetString("Email");
+            var userId = dto.UserId;
+            var email = dto.Email;
 
-            if (userId == null || string.IsNullOrEmpty(email))
-                return BadRequest("UserId and Email not getting fetched from Session!");
+            if (userId == 0 || string.IsNullOrEmpty(email))
+                return BadRequest("UserId and Email are required in the payload.");
 
-            // Fetch Lab details using LabId
-            var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == userId.Value);
+            var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == userId);
             if (lab == null)
-                return NotFound($"Lab with ID {userId.Value} not found.");
+                return NotFound($"Lab with ID {userId} not found.");
 
-            // Check if this lab already has a Super Admin
             if (lab.IsSuperAdmin)
                 return BadRequest($"A Super Admin already exists for the lab {lab.LabName}.");
 
-            // Check if the lab is a branch (LabReference ≠ 0)
             if (lab.LabReference != 0)
             {
-                // Fetch parent lab details
                 var parentLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == lab.LabReference);
                 if (parentLab != null)
-                {
                     return BadRequest($"{lab.LabName} is a branch of {parentLab.LabName} and cannot create a Super Admin.");
-                }
             }
 
-            // Fetch UserDetails using HFID
             var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
             if (userDetails == null)
                 return NotFound($"No user found with HFID {dto.HFID}.");
@@ -67,34 +59,32 @@ namespace HFiles_Backend.Controllers
             var newAdmin = new LabAdmin
             {
                 UserId = userDetails.user_id,
-                LabId = userId.Value,
+                LabId = userId,
                 PasswordHash = _passwordHasher.HashPassword(null, dto.Password),
                 EpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IsMain = 1
             };
 
             _context.LabAdmins.Add(newAdmin);
-
-            // Update IsSuperAdmin to true after adding the admin
             lab.IsSuperAdmin = true;
             _context.LabSignupUsers.Update(lab);
 
             await _context.SaveChangesAsync();
 
-            // Generate Token After Successful Registration
-            var token = _jwtTokenService.GenerateToken(userId.Value, email, newAdmin.Id, dto.Role);
+            var token = _jwtTokenService.GenerateToken(userId, email, newAdmin.Id, dto.Role);
 
             return Ok(new
             {
                 Message = "Lab admin created successfully, and lab IsSuperAdmin updated.",
                 UserId = newAdmin.UserId,
-                LabId = userId.Value,
+                Username = $"{userDetails.user_firstname} {userDetails.user_lastname}",
+                LabId = userId,
                 LabName = lab.LabName,
                 LabEmail = email,
                 LabAdminId = newAdmin.Id,
                 Role = dto.Role,
                 Token = token,
-                IsSuperAdmin = lab.IsSuperAdmin 
+                IsSuperAdmin = lab.IsSuperAdmin                
             });
         }
 
@@ -109,21 +99,17 @@ namespace HFiles_Backend.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            // Retrieve UserId & Email stored from Lab login
-            var userId = HttpContext.Session.GetInt32("UserId");
-            var email = HttpContext.Session.GetString("Email");
+            if (dto.UserId == null || string.IsNullOrEmpty(dto.Email))
+                return Unauthorized("User ID and Email must be provided.");
 
-            if (userId == null || string.IsNullOrEmpty(email))
-                return Unauthorized("Lab login details missing. Please login as Lab first.");
-
-            // Fetch LabAdmin using HFID instead of session-stored UserId
             var userDetails = await _context.Set<UserDetails>()
                 .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
 
             if (userDetails == null)
                 return NotFound($"No Super Admin/Admin/Member found with HFID {dto.HFID}.");
 
-            // Validate Super Admin Login
+            string username = $"{userDetails.user_firstname} {userDetails.user_lastname}"; 
+
             if (dto.Role == "Super Admin")
             {
                 var admin = await _context.LabAdmins.FirstOrDefaultAsync(a => a.UserId == userDetails.user_id);
@@ -134,12 +120,15 @@ namespace HFiles_Backend.Controllers
                     .Equals(PasswordVerificationResult.Success))
                     return Unauthorized("Invalid password.");
 
-                // Generate Token After Successful Login
-                var token = _jwtTokenService.GenerateToken(userId.Value, email, admin.Id, dto.Role);
-                return Ok(new { Message = "Login successful.", Token = token });
+                var token = _jwtTokenService.GenerateToken(dto.UserId.Value, dto.Email, admin.Id, dto.Role);
+                return Ok(new
+                {
+                    Message = "Login successful.",
+                    Username = username,
+                    Token = token
+                    
+                });
             }
-
-            // Validate Admin/Member Login
             else if (dto.Role == "Admin" || dto.Role == "Member")
             {
                 var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
@@ -150,10 +139,14 @@ namespace HFiles_Backend.Controllers
                     .Equals(PasswordVerificationResult.Success))
                     return Unauthorized("Invalid password.");
 
-
-                // Generate Token After Successful Login
-                var token = _jwtTokenService.GenerateToken(member.UserId, email, member.Id, dto.Role);
-                return Ok(new { Message = "Login successful.", Token = token });
+                var token = _jwtTokenService.GenerateToken(member.UserId, dto.Email, member.Id, dto.Role);
+                return Ok(new
+                {
+                    Message = "Login successful.",
+                    Username = username,
+                    Token = token
+                    
+                });
             }
 
             return BadRequest("Invalid role specified.");
@@ -163,6 +156,8 @@ namespace HFiles_Backend.Controllers
 
 
 
+
+        // Get all users (Super Admin/Admin/Members)
         [HttpGet("LabUsers")]
         public async Task<IActionResult> GetAllLabUsers()
         {
@@ -171,36 +166,42 @@ namespace HFiles_Backend.Controllers
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
                 return Unauthorized("Invalid or missing LabId in token.");
 
-            // Fetch all Admins for the Lab
-            var admins = await _context.LabAdmins
-                .Where(a => a.LabId == labId)
-                .Select(a => new
-                {
-                    AdminId = a.Id,
-                    UserId = a.UserId,
-                    LabId = a.LabId,
-                    Role = "Super Admin",
-                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(a.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
-                })
-                .ToListAsync();
+            // Fetch Super Admins with HFID, Name, and Profile Photo
+            var admins = await (from a in _context.LabAdmins
+                                join u in _context.UserDetails on a.UserId equals u.user_id
+                                where a.LabId == labId
+                                select new
+                                {
+                                    AdminId = a.Id,
+                                    UserId = a.UserId,
+                                    LabId = a.LabId,
+                                    HFID = u.user_membernumber,
+                                    Name = $"{u.user_firstname} {u.user_lastname}",
+                                    Role = "Super Admin",
+                                    ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image, 
+                                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(a.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                                }).ToListAsync();
 
-            // Fetch all Members for the Lab
-            var members = await _context.LabMembers
-                .Where(m => m.LabId == labId)
-                .Select(m => new
-                {
-                    MemberId = m.Id,
-                    UserId = m.UserId,
-                    LabId = m.LabId,
-                    Role = "Member",
-                    CreatedBy = m.CreatedBy,
-                    DeletedBy = m.DeletedBy,
-                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
-                })
-                .ToListAsync();
+            // Fetch Members with HFID, Name, and Profile Photo
+            var members = await (from m in _context.LabMembers
+                                 join u in _context.UserDetails on m.UserId equals u.user_id
+                                 where m.LabId == labId && m.DeletedBy == 0
+                                 select new
+                                 {
+                                     MemberId = m.Id,
+                                     UserId = m.UserId,
+                                     LabId = m.LabId,
+                                     HFID = u.user_membernumber,
+                                     Name = $"{u.user_firstname} {u.user_lastname}",
+                                     Role = m.Role,
+                                     CreatedBy = m.CreatedBy,
+                                     DeletedBy = m.DeletedBy,
+                                     ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image, 
+                                     CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                                 }).ToListAsync();
 
             if (!admins.Any() && !members.Any())
-                return NotFound($"No admins or members found for LabId {labId}.");
+                return NotFound($"No active admins or members found for LabId {labId}.");
 
             return Ok(new
             {
@@ -210,6 +211,10 @@ namespace HFiles_Backend.Controllers
                 Members = members
             });
         }
+
+
+
+
 
 
     }

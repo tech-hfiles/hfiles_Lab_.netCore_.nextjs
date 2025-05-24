@@ -85,12 +85,15 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (otpEntry.OtpCode != dto.Otp)
                 return BadRequest("Invalid OTP.");
 
-            // Store UserId & Email temporarily (session storage)
-            HttpContext.Session.SetInt32("UserId", user.Id);
-            HttpContext.Session.SetString("Email", user.Email);
-
-            return Ok(new { message = "Lab login successful, proceed to LabAdmin login.", IsSuperAdmin = user.IsSuperAdmin });
+            return Ok(new
+            {
+                message = "Lab login successful, proceed to LabAdmin login.",
+                UserId = user.Id,
+                Email = user.Email,
+                IsSuperAdmin = user.IsSuperAdmin
+            });
         }
+
 
 
         // Login via Email + Password
@@ -104,12 +107,13 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (result == PasswordVerificationResult.Failed)
                 return BadRequest("Incorrect password.");
 
-            // Store UserId & Email temporarily (session storage)
-            HttpContext.Session.SetInt32("UserId", user.Id);
-            HttpContext.Session.SetString("Email", user.Email);
-
-            return Ok(new { message = "Lab login successful, proceed to LabAdmin login.", IsSuperAdmin = user.IsSuperAdmin });
+            return Ok(new
+            {
+                message = "Lab login successful, proceed to LabAdmin login.",
+                UserId = user.Id,
+                Email = user.Email,
+                IsSuperAdmin = user.IsSuperAdmin
+            });
         }
-
     }
 }

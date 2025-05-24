@@ -9,6 +9,8 @@ namespace HFiles_Backend.Application.DTOs.Labs
 {
     public class LabAdminDto
     {
+        public int UserId { get; set; }          
+        public string? Email { get; set; }
         public string? HFID { get; set; }
 
         [Required]
