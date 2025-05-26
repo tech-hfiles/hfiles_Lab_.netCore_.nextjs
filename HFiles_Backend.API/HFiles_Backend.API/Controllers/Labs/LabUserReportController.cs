@@ -67,15 +67,12 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
 
-
-            // Get LabId (UserId) from JWT token
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
             {
                 return Unauthorized("Invalid or missing LabId (UserId) claim.");
             }
 
-            // DEBUG: Return for testing
             Console.WriteLine("Logged-in LabId: " + labId);
 
             if (dto.Entries == null || dto.Entries.Count == 0)
@@ -90,43 +87,45 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             foreach (var entry in dto.Entries)
             {
+                Console.WriteLine($"Processing Entry: HFID = {entry.HFID}, Email = {entry.Email}");
+                Console.WriteLine($"ReportFiles Count: {entry.ReportFiles?.Count ?? 0}");
+                Console.WriteLine($"ReportTypes Count: {entry.ReportTypes?.Count ?? 0}");
                 if (entry.ReportFiles == null || entry.ReportFiles.Count == 0)
                 {
-                    entryResults.Add(new
-                    {
-                        HFID = entry.HFID,
-                        Email = entry.Email,
-                        Status = "Failed",
-                        Reason = "No report files provided"
-                    });
+                    entryResults.Add(new { HFID = entry.HFID, Email = entry.Email, Status = "Failed", Reason = "No report files provided" });
                     continue;
                 }
+
+                if (entry.ReportFiles == null || entry.ReportTypes == null)
+                {
+                    return BadRequest("ReportFiles or ReportTypes is missing in the request.");
+                }
+
+                if (entry.ReportFiles.Count != entry.ReportTypes.Count)
+                {
+                    return BadRequest($"Mismatch between file count ({entry.ReportFiles.Count}) and report type count ({entry.ReportTypes.Count}).");
+                }
+
 
                 var userDetails = await _context.Set<UserDetails>()
                     .FirstOrDefaultAsync(u => u.user_membernumber == entry.HFID && u.user_email == entry.Email);
 
                 if (userDetails == null)
                 {
-                    string reason = $"Mismatch: HFID = {entry.HFID}, Email = {entry.Email}";
-                    Console.WriteLine(reason);
-                    entryResults.Add(new
-                    {
-                        HFID = entry.HFID,
-                        Email = entry.Email,
-                        Status = "Failed",
-                        Reason = "HFID and Email do not match any user"
-                    });
+                    entryResults.Add(new { HFID = entry.HFID, Email = entry.Email, Status = "Failed", Reason = "HFID and Email do not match any user" });
                     continue;
                 }
 
                 int userId = userDetails.user_id;
                 string uploadType = userDetails.user_reference == "0" ? "independent" : "dependent";
-                int reportTypeValue = GetReportTypeValue(entry.ReportType);
                 long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var uploadedFiles = new List<string>();
+                var uploadedFiles = new List<object>();
 
-                foreach (var file in entry.ReportFiles)
+                for (int i = 0; i < entry.ReportFiles.Count; i++)
                 {
+                    var file = entry.ReportFiles[i];
+                    var reportType = entry.ReportTypes[i];
+
                     if (file == null || file.Length == 0)
                         continue;
 
@@ -138,14 +137,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                         await file.CopyToAsync(stream);
                     }
 
-                    // Step 1: Create and save UserReport
                     var userReport = new UserReports
                     {
                         UserId = userId,
                         ReportName = Path.GetFileNameWithoutExtension(file.FileName),
                         MemberId = "0",
                         ReportUrl = fileName,
-                        ReportId = reportTypeValue,
+                        ReportId = GetReportTypeValue(reportType), 
                         IsActive = "0",
                         CreatedDate = DateTime.UtcNow,
                         AccessMappingId = null,
@@ -157,9 +155,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
 
                     _context.UserReports.Add(userReport);
-                    await _context.SaveChangesAsync(); // Save to generate userReport.Id
+                    await _context.SaveChangesAsync();
 
-                    // Step 2: Create and save LabUserReport
                     var labUserReport = new LabUserReports
                     {
                         UserId = userId,
@@ -170,42 +167,28 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
 
                     _context.LabUserReports.Add(labUserReport);
-                    await _context.SaveChangesAsync(); // Save to generate labUserReport.Id
-
-                    // Step 3: Link LabUserReportId back to UserReport
-                    userReport.LabUserReportId = labUserReport.Id;
-                    _context.UserReports.Update(userReport); // EF tracks this but safe to explicitly update
                     await _context.SaveChangesAsync();
 
-                    uploadedFiles.Add(fileName);
-                }
+                    userReport.LabUserReportId = labUserReport.Id;
+                    _context.UserReports.Update(userReport);
+                    await _context.SaveChangesAsync();
 
+                    uploadedFiles.Add(new { FileName = fileName, ReportType = reportType });
+                }
 
                 if (uploadedFiles.Any())
                 {
                     successfulUploads++;
-                    entryResults.Add(new
-                    {
-                        HFID = entry.HFID,
-                        Email = entry.Email,
-                        Status = "Success",
-                        UploadedFiles = uploadedFiles
-                    });
+                    entryResults.Add(new { HFID = entry.HFID, Email = entry.Email, Status = "Success", UploadedFiles = uploadedFiles });
                 }
                 else
                 {
-                    entryResults.Add(new
-                    {
-                        HFID = entry.HFID,
-                        Email = entry.Email,
-                        Status = "Failed",
-                        Reason = "Valid user, but no report files were uploaded"
-                    });
+                    entryResults.Add(new { HFID = entry.HFID, Email = entry.Email, Status = "Failed", Reason = "Valid user, but no report files were uploaded" });
                 }
             }
 
             await _context.SaveChangesAsync();
-           
+
             if (successfulUploads == 0)
             {
                 return BadRequest(new
@@ -245,12 +228,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return Unauthorized("Invalid or missing LabId (UserId) claim.");
             }
 
-            // Fetch current lab details
             var currentLab = await _context.LabSignupUsers.FirstOrDefaultAsync(lsu => lsu.Id == labId);
             if (currentLab == null)
                 return NotFound($"LabId {labId} not found.");
 
-            // Fetch UserDetails 
             var userDetails = await _context.Set<UserDetails>()
                 .Select(u => new { u.user_id, u.user_membernumber, u.user_firstname, u.user_lastname, u.user_email, u.user_image })
                 .FirstOrDefaultAsync(u => u.user_id == userId);
@@ -258,10 +239,8 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (userDetails == null)
                 return NotFound($"User details not found for UserId {userId}.");
 
-            // Generate Full Name
             string fullName = $"{userDetails.user_firstname} {userDetails.user_lastname}".Trim();
 
-            // Find related labs
             List<int> relatedLabIds;
             if (currentLab.LabReference == 0)
             {
@@ -280,7 +259,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 relatedLabIds.Add(currentLab.LabReference);
             }
 
-            // Fetch reports for all related labs
             var userReports = await _context.UserReports
                 .Where(ur => ur.UserId == userId && relatedLabIds.Contains(ur.LabId) && ur.UploadedBy == "Lab")
                 .ToListAsync();
@@ -293,7 +271,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (!userReports.Any() && !labUserReports.Any())
                 return NotFound($"No reports found for UserId {userId} in related labs.");
 
-            // Map response
             var responseData = userReports.Select(userReport =>
             {
                 var matchedLabReport = labUserReports
@@ -324,7 +301,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 };
             }).ToList();
 
-            // Structured response 
             return Ok(new
             {
                 Message = "Reports fetched successfully.",
@@ -356,7 +332,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return Unauthorized("Invalid or missing LabId (UserId) claim.");
             }
 
-            // Fetch latest reports per user for the specified LabId
             var latestReports = await _context.LabUserReports
                 .Where(lur => lur.LabId == labId)
                 .GroupBy(lur => lur.UserId)
@@ -366,10 +341,8 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (!latestReports.Any())
                 return NotFound($"No reports found for LabId {labId}.");
 
-            // Collect all UserIds
             var userIds = latestReports.Select(lr => lr.UserId).ToList();
 
-            // Fetch user details in a single query (avoiding per-loop execution)
             var userDetailsDict = await _context.Set<UserDetails>()
                 .Where(u => userIds.Contains(u.user_id))
                 .ToDictionaryAsync(u => u.user_id, u => new
@@ -379,15 +352,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                     UserId = u.user_id
                 });
 
-            // Fetch latest ReportId per UserId from `UserReports`
             var reportIdsDict = await _context.UserReports
                 .Where(ur => userIds.Contains(ur.UserId) && ur.LabId == labId)
                 .GroupBy(ur => ur.UserId)
                 .Select(g => new { UserId = g.Key, ReportId = g.OrderByDescending(ur => ur.CreatedDate).First().ReportId })
                 .ToDictionaryAsync(x => x.UserId, x => x.ReportId);
 
-
-            // Prepare the response
             var responseData = latestReports.Select(report =>
             {
                 var userDetail = userDetailsDict.GetValueOrDefault(report.UserId);
@@ -424,7 +394,6 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             long startEpoch, endEpoch;
 
-            // Validate and convert start & end date to epoch range
             if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
             {
                 if (!DateTime.TryParseExact(startDate, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var selectedStartDate) ||
@@ -438,14 +407,12 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
             else
             {
-                // Default to current and previous day if no date range is provided
                 var today = DateTime.UtcNow.Date;
                 var yesterday = today.AddDays(-1);
                 startEpoch = new DateTimeOffset(yesterday).ToUnixTimeSeconds();
                 endEpoch = new DateTimeOffset(today.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
             }
 
-            // Fetch latest report per user within the selected date range
             var latestReports = await _context.LabUserReports
                 .Where(lur => lur.LabId == labId && lur.EpochTime >= startEpoch && lur.EpochTime <= endEpoch)
                 .GroupBy(lur => lur.UserId)
@@ -506,7 +473,6 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
 
-            // Get LabId from JWT token
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
             {
@@ -534,7 +500,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                     continue;
                 }
 
-                // Increment resend count
                 labUserReport.Resend += 1;
                 _context.LabUserReports.Update(labUserReport);
 

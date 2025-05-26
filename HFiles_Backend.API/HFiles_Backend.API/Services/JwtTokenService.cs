@@ -13,7 +13,6 @@ public class JwtTokenService
         _jwtSettings = jwtSettings;
     }
 
-    // Generate token after LabAdmin login (single token approach)
     public string GenerateToken(int userId, string email, int labAdminId, string role)
     {
         var claims = new List<Claim>

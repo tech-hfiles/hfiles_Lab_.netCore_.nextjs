@@ -15,7 +15,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             _context = context;
         }
 
-        // GET: api/LabHFID?email=abc@example.com
         [HttpGet]
         public async Task<IActionResult> GetHFIDByEmail([FromQuery] string email)
         {

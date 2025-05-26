@@ -16,17 +16,15 @@ namespace HFiles_Backend.Infrastructure.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // Marks HFID Unique
             modelBuilder.Entity<LabSignupUser>()
                 .HasIndex(u => u.HFID)
                 .IsUnique();
 
-            // Mark user_details as read-only (no migrations)
             modelBuilder.Entity<UserDetails>().HasNoKey();
         }
 
         public DbSet<UserReports> UserReports { get; set; }
-        public DbSet<UserDetails> UserDetails { get; set; } // No migrations
+        public DbSet<UserDetails> UserDetails { get; set; }
         public DbSet<LabUserReports> LabUserReports { get; set; }
         public DbSet<LabAdmin> LabAdmins { get; set; }
         public DbSet<LabMember> LabMembers { get; set; }

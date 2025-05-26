@@ -36,7 +36,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (labUser == null)
                 return NotFound("No lab user found with this email.");
 
-            // Prepare Email with Lab Name
             string resetLink = $"https://hfiles.co.in/forgot-password";
             string emailBody = $@"
                 <html>
@@ -69,13 +68,11 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (labUser == null)
                 return NotFound("No lab user found with this email.");
 
-            // Verify if New Password is the same as the current one
             var passwordVerification = _passwordHasher.VerifyHashedPassword(null, labUser.PasswordHash, dto.NewPassword);
 
             if (passwordVerification == PasswordVerificationResult.Success)
                 return BadRequest("This password is already registered. Please proceed to Lab Login, or if you wish to change your password, enter a different one.");
 
-            // Hash New Password & Save
             labUser.PasswordHash = _passwordHasher.HashPassword(null, dto.NewPassword);
             await _context.SaveChangesAsync();
 

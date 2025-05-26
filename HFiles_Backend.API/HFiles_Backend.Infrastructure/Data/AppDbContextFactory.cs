@@ -9,7 +9,6 @@ namespace HFiles_Backend.Infrastructure.Data
     {
         public AppDbContext CreateDbContext(string[] args)
         {
-            // Load .env manually
             DotNetEnv.Env.Load();
 
             var connectionString = $"Server={Environment.GetEnvironmentVariable("DB_HOST")};" +

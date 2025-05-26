@@ -29,7 +29,15 @@ namespace HFiles_Backend.Domain.Entities.Labs
 
         [Required]
         public long CreatedAtEpoch { get; set; }
+
         public int LabReference { get; set; } = 0;
+
         public bool IsSuperAdmin { get; set; } = false;
+
+        public int DeletedBy { get; set; } = 0;
+
+        public string? ProfilePhoto { get; set; }
+
+        public string? Address { get; set; }
     }
 }

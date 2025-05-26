@@ -152,14 +152,8 @@ namespace HFiles_Backend.Controllers
 
         // Get all users (Super Admin/Admin/Members)
         [HttpGet("LabUsers")]
-        public async Task<IActionResult> GetAllLabUsers()
+        public async Task<IActionResult> GetAllLabUsers([FromQuery] int labId)
         {
-            // Extract LabId from JWT token
-            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                return Unauthorized("Invalid or missing LabId in token.");
-
-            // Fetch Super Admins with HFID, Name, and Profile Photo
             var admins = await (from a in _context.LabAdmins
                                 join u in _context.UserDetails on a.UserId equals u.user_id
                                 where a.LabId == labId
@@ -170,28 +164,73 @@ namespace HFiles_Backend.Controllers
                                     LabId = a.LabId,
                                     HFID = u.user_membernumber,
                                     Name = $"{u.user_firstname} {u.user_lastname}",
+                                    Email = u.user_email,
                                     Role = "Super Admin",
-                                    ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image, 
+                                    ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image,
                                     CreatedAt = DateTimeOffset.FromUnixTimeSeconds(a.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
                                 }).ToListAsync();
 
-            // Fetch Members with HFID, Name, and Profile Photo
-            var members = await (from m in _context.LabMembers
-                                 join u in _context.UserDetails on m.UserId equals u.user_id
-                                 where m.LabId == labId && m.DeletedBy == 0
-                                 select new
-                                 {
-                                     MemberId = m.Id,
-                                     UserId = m.UserId,
-                                     LabId = m.LabId,
-                                     HFID = u.user_membernumber,
-                                     Name = $"{u.user_firstname} {u.user_lastname}",
-                                     Role = m.Role,
-                                     CreatedBy = m.CreatedBy,
-                                     DeletedBy = m.DeletedBy,
-                                     ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image, 
-                                     CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
-                                 }).ToListAsync();
+            var membersList = await (from m in _context.LabMembers
+                                     join u in _context.UserDetails on m.UserId equals u.user_id
+                                     where m.LabId == labId && m.DeletedBy == 0
+                                     select new
+                                     {
+                                         MemberId = m.Id,
+                                         UserId = m.UserId,
+                                         LabId = m.LabId,
+                                         HFID = u.user_membernumber,
+                                         Name = $"{u.user_firstname} {u.user_lastname}",
+                                         Email = u.user_email,
+                                         Role = m.Role,
+                                         CreatedBy = m.CreatedBy,
+                                         PromotedBy = m.PromotedBy,
+                                         DeletedBy = m.DeletedBy,
+                                         ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image,
+                                         CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                                     }).ToListAsync();
+
+            var labAdmins = await _context.LabAdmins.Where(a => a.LabId == labId).ToListAsync();
+            var labMembers = await _context.LabMembers.ToListAsync();
+            var userDetails = await _context.UserDetails.ToListAsync();
+
+            var members = membersList.Select(m =>
+            {
+                string promotedByName = "Not Promoted Yet";
+
+                if (labAdmins.Any(a => a.Id == m.PromotedBy))
+                {
+                    promotedByName = "Main";
+                }
+                else
+                {
+                    var promotingMember = labMembers.FirstOrDefault(lm => lm.Id == m.PromotedBy);
+                    if (promotingMember != null)
+                    {
+                        var promoterDetails = userDetails.FirstOrDefault(u => u.user_id == promotingMember.UserId);
+                        if (promoterDetails != null)
+                        {
+                            promotedByName = promoterDetails.user_firstname;
+                        }
+                    }
+                }
+
+                return new
+                {
+                    m.MemberId,
+                    m.UserId,
+                    //m.LabId,
+                    m.HFID,
+                    m.Name,
+                    m.Email,
+                    m.Role,
+                    //m.CreatedBy,
+                    m.PromotedBy,
+                    PromotedByName = promotedByName,
+                    m.DeletedBy,
+                    m.ProfilePhoto,
+                    m.CreatedAt
+                };
+            }).ToList();
 
             if (!admins.Any() && !members.Any())
                 return NotFound($"No active admins or members found for LabId {labId}.");
@@ -204,6 +243,8 @@ namespace HFiles_Backend.Controllers
                 Members = members
             });
         }
+
+
 
 
 

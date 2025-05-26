@@ -19,29 +19,28 @@ namespace HFiles_Backend.API.Controllers.Labs
             _context = context;
         }
 
+
+
+        // Create Branch
         [Authorize]
         [HttpPost("create")]
         public async Task<IActionResult> CreateBranch([FromBody] LabBranchDto dto)
         {
-            // Validate input
             if (string.IsNullOrWhiteSpace(dto.LabName) ||
                 string.IsNullOrWhiteSpace(dto.Email) ||
                 string.IsNullOrWhiteSpace(dto.PhoneNumber) ||
                 string.IsNullOrWhiteSpace(dto.Pincode))
                 return BadRequest("All fields are required.");
 
-            // Get user ID from token
             var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (userIdClaim == null)
                 return Unauthorized("Invalid token: missing UserId.");
 
             var parentId = int.Parse(userIdClaim.Value);
 
-            // Check if email already exists
             if (await _context.LabSignupUsers.AnyAsync(u => u.Email == dto.Email))
                 return BadRequest("Email already registered.");
 
-            // Fetch parent user to copy password
             var parentUser = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Id == parentId);
             if (parentUser == null)
                 return Unauthorized("Parent lab not found.");
@@ -77,43 +76,39 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
+
+
+        // Get All Lab Branches
         [HttpGet]
         [Authorize]
         public async Task<IActionResult> GetLabBranches()
         {
-            // Extract LabId from JWT token
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
             {
                 return Unauthorized("Invalid or missing LabId claim.");
             }
 
-            // Fetch details of logged-in lab
             var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
             if (loggedInLab == null)
             {
                 return NotFound($"Lab with ID {labId} not found.");
             }
 
-            // Determine the main lab ID
             int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-            // Fetch the main lab details
             var mainLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == mainLabId);
             if (mainLab == null)
             {
                 return NotFound($"Main lab with ID {mainLabId} not found.");
             }
 
-            // Retrieve all branches belonging to the main lab
             var branches = await _context.LabSignupUsers
                 .Where(l => l.LabReference == mainLabId)
                 .ToListAsync();
 
-            // Build flat response list
             var result = new List<object>();
 
-            // Add main lab with HFID, Email, and Phone Number
             result.Add(new
             {
                 labId = mainLab.Id,
@@ -121,16 +116,19 @@ namespace HFiles_Backend.API.Controllers.Labs
                 HFID = mainLab.HFID,
                 Email = mainLab.Email,
                 PhoneNumber = mainLab.PhoneNumber, 
+                Address = mainLab.Address,
+                ProfilePhoto = mainLab.ProfilePhoto,
                 labType = "mainLab"
             });
 
-            // Add branches with HFID and Email (No Phone Number)
             result.AddRange(branches.Select(branch => new
             {
                 labId = branch.Id,
                 labName = branch.LabName,
                 HFID = branch.HFID,
                 Email = branch.Email,
+                Address = branch.Address,
+                ProfilePhoto = branch.ProfilePhoto,
                 labType = "branch"
             }));
 
@@ -138,6 +136,10 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
+
+
+
+        // Deletes Branch 
         [HttpDelete("delete/{branchId}")]
         [Authorize]
         public async Task<IActionResult> DeleteBranch(int branchId)
@@ -148,33 +150,26 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return Unauthorized("Invalid or missing LabId claim.");
             }
 
-            // Fetch the branch details
             var branch = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == branchId);
             if (branch == null)
             {
                 return NotFound($"Branch with ID {branchId} not found.");
             }
 
-            // Ensure the user is deleting a valid branch, not the main lab
             if (branch.LabReference == 0)
             {
                 return BadRequest("Cannot delete the main lab. Only branches can be deleted.");
             }
 
-            // Ensure the logged-in lab is the owner of the branch
             if (branch.LabReference != labId)
             {
                 return Unauthorized("You do not have permission to delete this branch.");
             }
 
-            // Delete the branch from the database
-            _context.LabSignupUsers.Remove(branch);
+            branch.DeletedBy = labId;
             await _context.SaveChangesAsync();
 
             return Ok($"Branch '{branch.LabName}' (ID: {branchId}) successfully deleted.");
         }
-
-
-
     }
 }

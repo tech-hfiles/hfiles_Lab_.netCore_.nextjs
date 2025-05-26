@@ -33,11 +33,9 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (string.IsNullOrWhiteSpace(dto.LabName))
                 return BadRequest("LabName is required.");
 
-            // Generate a random 6-digit OTP
             var otp = new Random().Next(100000, 999999).ToString();
             var now = DateTime.UtcNow;
 
-            // Remove expired OTPs for this email
             var expiredOtps = await _context.LabOtpEntries
                 .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
                 .ToListAsync();

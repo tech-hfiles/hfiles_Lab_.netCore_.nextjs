@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
+using Microsoft.AspNetCore.Authorization;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -28,10 +29,11 @@ namespace HFiles_Backend.API.Controllers.Labs
             _emailService = emailService;
         }
 
+
+        // Lab Sign Up
         [HttpPost("labsignup")]
         public async Task<IActionResult> Signup(LabSignupDto dto)
         {
-            // Input Validations
             if (string.IsNullOrWhiteSpace(dto.LabName)) return BadRequest("Lab name is required.");
             if (string.IsNullOrWhiteSpace(dto.Email)) return BadRequest("Email is required.");
             if (string.IsNullOrWhiteSpace(dto.PhoneNumber)) return BadRequest("Phone number is required.");
@@ -43,7 +45,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (await _context.LabSignupUsers.AnyAsync(u => u.Email == dto.Email))
                 return BadRequest("Email already registered.");
 
-            // OTP Validations
             var otpEntry = await _context.LabOtpEntries
                 .Where(o => o.Email == dto.Email)
                 .OrderByDescending(o => o.CreatedAt)
@@ -53,7 +54,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (otpEntry.ExpiryTime < DateTime.UtcNow) return BadRequest("OTP has expired.");
             if (otpEntry.OtpCode != dto.Otp) return BadRequest("Invalid OTP.");
 
-            // Creates user in database
             var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var last6Epoch = epochTime % 1000000;
             var labPrefix = dto.LabName.Length >= 3 ? dto.LabName.Substring(0, 3).ToUpper() : dto.LabName.ToUpper();
@@ -73,15 +73,12 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
-            // After user is added and saved
             _context.LabSignupUsers.Add(user);
             await _context.SaveChangesAsync();
 
-            // Delete used OTP entry
             _context.LabOtpEntries.Remove(otpEntry);
             await _context.SaveChangesAsync();
 
-            // Send Emails
             var userEmailBody = $@"
                 <html>
                 <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
@@ -130,5 +127,54 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             return Ok(new { message = "User registered successfully.", IsSuperAdmin = user.IsSuperAdmin });
         }
+
+
+
+
+        // Update Address and Profile Photo for Lab
+        [HttpPost("update-profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateLabUserProfile([FromForm] LabUpdateDto dto, IFormFile? profilephoto)
+        {
+            var user = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.Id);
+            if (user == null)
+                return NotFound($"Lab user with ID {dto.Id} not found.");
+
+            if (!string.IsNullOrEmpty(dto.Address))
+                user.Address = dto.Address;
+
+            if (profilephoto != null && profilephoto.Length > 0)
+            {
+                string uploadsFolder = Path.Combine("wwwroot", "uploads");
+                Directory.CreateDirectory(uploadsFolder);
+
+                DateTime createdAt = DateTimeOffset.FromUnixTimeSeconds(user.CreatedAtEpoch).UtcDateTime;
+                string formattedTime = createdAt.ToString("dd-MM-yyyy-HH-mm-ss");
+
+                string fileName = $"{Path.GetFileNameWithoutExtension(profilephoto.FileName)}_{formattedTime}{Path.GetExtension(profilephoto.FileName)}";
+                string filePath = Path.Combine(uploadsFolder, fileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await profilephoto.CopyToAsync(stream);
+                }
+
+                user.ProfilePhoto = fileName; 
+            }
+
+
+            _context.LabSignupUsers.Update(user);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Message = "Profile updated successfully.",
+                LabId = user.Id,
+                UpdatedAddress = user.Address,
+                UpdatedProfilePhoto = user.ProfilePhoto
+            });
+        }
+
+
     }
 }

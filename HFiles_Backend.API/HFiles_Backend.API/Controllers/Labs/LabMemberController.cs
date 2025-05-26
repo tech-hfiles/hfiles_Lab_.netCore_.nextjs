@@ -22,6 +22,8 @@ namespace HFiles_Backend.API.Controllers.Labs
             _passwordHasher = passwordHasher;
         }
 
+
+        // Create Members
         [HttpPost("create")]
         [Authorize]
         public async Task<IActionResult> AddMember([FromBody] LabMemberDto dto)
@@ -30,22 +32,18 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (string.IsNullOrWhiteSpace(dto.BranchName)) return BadRequest("Branch name is required.");
             if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
 
-            // Fetch UserId from UserDetails using HFID
             var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
             if (userDetails == null)
                 return NotFound($"No user found with HFID {dto.HFID}.");
 
-            // Fetch LabId using BranchName from LabSignupUsers
             var labEntry = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.LabName == dto.BranchName);
             if (labEntry == null)
                 return NotFound($"No lab found with Branch Name {dto.BranchName}.");
 
-            // Fetch CreatedBy (LabAdminId) from JWT Token
             var createdByClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             if (createdByClaim == null || !int.TryParse(createdByClaim.Value, out int createdBy))
                 return Unauthorized("Invalid or missing LabAdminId in token."); 
 
-            // Create and store Member entity
             var newMember = new LabMember
             {
                 UserId = userDetails.user_id,
@@ -73,6 +71,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
+
         // Promote members to Admins API
         [HttpPost("promote")]
         public async Task<IActionResult> PromoteMembers([FromBody] LabPromoteMembersDto dto)
@@ -80,12 +80,10 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (dto.Ids == null || !dto.Ids.Any())
                 return BadRequest("No member IDs provided for promotion.");
 
-            // Extract LabAdminId from JWT token
             var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
                 return Unauthorized("Invalid or missing LabAdminId in token.");
 
-            // Extract Role from JWT token
             var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
             if (roleClaim == null)
                 return Unauthorized("Invalid or missing Role in token.");
@@ -103,7 +101,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                     continue;
                 }
 
-                // Promote the member to Admin
                 member.Role = "Admin";
                 member.PromotedBy = labAdminId; 
                 _context.LabMembers.Update(member);
@@ -135,17 +132,14 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpDelete("delete/{id}")]
         public async Task<IActionResult> DeleteLabMember(int id)
         {
-            // Find the member
             var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == id);
 
             if (member == null)
                 return NotFound("Lab member not found.");
 
-            // Prevent Admins from being deleted
             if (member.Role == "Admin")
                 return BadRequest("Admin cannot be deleted.");
 
-            // Extract user info from token
             var deletedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
 
@@ -155,12 +149,10 @@ namespace HFiles_Backend.API.Controllers.Labs
             var deletedById = int.Parse(deletedByIdClaim.Value);
             var deletedByRole = deletedByRoleClaim.Value;
 
-            // Soft delete — update DeletedBy only
             member.DeletedBy = deletedById;
             _context.LabMembers.Update(member);
             await _context.SaveChangesAsync();
 
-            // Return response with who deleted it and their role
             return Ok(new
             {
                 Message = "Member marked as deleted successfully.",
