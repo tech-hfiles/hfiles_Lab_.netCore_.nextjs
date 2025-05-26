@@ -384,13 +384,10 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Fetch All Distinct Users Based on Selection of Date
         [HttpGet("lab/reports")]
-        public async Task<IActionResult> GetLabUserReports([FromQuery] string? startDate, [FromQuery] string? endDate)
+        public async Task<IActionResult> GetLabUserReports([FromQuery] int labId, [FromQuery] string? startDate, [FromQuery] string? endDate)
         {
-            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
-                return Unauthorized("Invalid or missing LabId (UserId) claim.");
-            }
+            if (labId <= 0)
+                return BadRequest("Invalid LabId.");
 
             long startEpoch, endEpoch;
 
@@ -413,16 +410,18 @@ namespace HFiles_Backend.API.Controllers.Labs
                 endEpoch = new DateTimeOffset(today.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
             }
 
-            var latestReports = await _context.LabUserReports
-                .Where(lur => lur.LabId == labId && lur.EpochTime >= startEpoch && lur.EpochTime <= endEpoch)
+            var filteredReports = await _context.LabUserReports
+                .Where(lur => (lur.LabId == labId && lur.BranchId == 0) ||
+                              (lur.BranchId == labId))
+                .Where(lur => lur.EpochTime >= startEpoch && lur.EpochTime <= endEpoch)
                 .GroupBy(lur => lur.UserId)
-                .Select(g => g.OrderByDescending(r => r.EpochTime).First())
+                .Select(g => g.OrderByDescending(r => r.EpochTime).First()) 
                 .ToListAsync();
 
-            if (!latestReports.Any())
+            if (!filteredReports.Any())
                 return NotFound($"No reports found for LabId {labId} within the selected date range.");
 
-            var userIds = latestReports.Select(lr => lr.UserId).ToList();
+            var userIds = filteredReports.Select(lr => lr.UserId).ToList();
 
             var userDetailsDict = await _context.Set<UserDetails>()
                 .Where(u => userIds.Contains(u.user_id))
@@ -443,7 +442,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 })
                 .ToDictionaryAsync(x => x.UserId, x => x.ReportId);
 
-            var responseData = latestReports.Select(report =>
+            var responseData = filteredReports.Select(report =>
             {
                 var userDetail = userDetailsDict.GetValueOrDefault(report.UserId);
                 if (userDetail == null) return null;
@@ -452,6 +451,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 return new
                 {
+                    Id = report.Id,
                     HFID = userDetail.HFID,
                     Name = userDetail.Name,
                     UserId = userDetail.UserId,
@@ -462,6 +462,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             return Ok(responseData);
         }
+
+
 
 
 

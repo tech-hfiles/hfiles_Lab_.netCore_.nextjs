@@ -32,6 +32,14 @@ namespace HFiles_Backend.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
+            if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
+            if (string.IsNullOrWhiteSpace(dto.ConfirmPassword)) return BadRequest("Confirm Password is required.");
+
+            if (dto.Password != dto.ConfirmPassword)
+            {
+                return BadRequest("Passwords do not match.");
+            }
+
             var userId = dto.UserId;
             var email = dto.Email;
 
@@ -52,9 +60,19 @@ namespace HFiles_Backend.Controllers
                     return BadRequest($"{lab.LabName} is a branch of {parentLab.LabName} and cannot create a Super Admin.");
             }
 
-            var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
+            var userDetails = await _context.Set<UserDetails>()
+                .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
             if (userDetails == null)
                 return NotFound($"No user found with HFID {dto.HFID}.");
+
+            var existingAdmin = await _context.LabAdmins
+                .FirstOrDefaultAsync(a => a.UserId == userDetails.user_id && a.IsMain == 1);
+
+            if (existingAdmin != null)
+            {
+                var existingLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == existingAdmin.LabId);
+                return BadRequest($"{userDetails.user_firstname} {userDetails.user_lastname}'s HFID {dto.HFID} already exists as Super Admin under {existingLab?.LabName}.");
+            }
 
             var newAdmin = new LabAdmin
             {
@@ -77,9 +95,10 @@ namespace HFiles_Backend.Controllers
             {
                 Message = "Lab admin created successfully, and lab IsSuperAdmin updated.",
                 Username = $"{userDetails.user_firstname} {userDetails.user_lastname}",
-                Token = token            
+                Token = token
             });
         }
+
 
 
 

@@ -9,6 +9,6 @@ namespace HFiles_Backend.API.DTOs.Labs
         public string? Name { get; set; }
         public List<string> ReportTypes { get; set; }
         public List<IFormFile> ReportFiles { get; set; } = new();
-        public int? BranchId { get; set; }
+        public int BranchId { get; set; }
     }
 }

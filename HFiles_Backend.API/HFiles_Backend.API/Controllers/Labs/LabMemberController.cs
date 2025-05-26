@@ -31,18 +31,29 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (string.IsNullOrWhiteSpace(dto.HFID)) return BadRequest("HFID is required.");
             if (string.IsNullOrWhiteSpace(dto.BranchName)) return BadRequest("Branch name is required.");
             if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
+            if (string.IsNullOrWhiteSpace(dto.ConfirmPassword)) return BadRequest("Confirm Password is required.");
 
-            var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
+            if (dto.Password != dto.ConfirmPassword)
+            {
+                return BadRequest("Passwords do not match.");
+            }
+
+            var userDetails = await _context.Set<UserDetails>()
+                .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
             if (userDetails == null)
                 return NotFound($"No user found with HFID {dto.HFID}.");
 
-            var labEntry = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.LabName == dto.BranchName);
+            var labEntry = await _context.LabSignupUsers
+                .FirstOrDefaultAsync(l => l.LabName == dto.BranchName);
             if (labEntry == null)
                 return NotFound($"No lab found with Branch Name {dto.BranchName}.");
 
             var createdByClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             if (createdByClaim == null || !int.TryParse(createdByClaim.Value, out int createdBy))
-                return Unauthorized("Invalid or missing LabAdminId in token."); 
+                return Unauthorized("Invalid or missing LabAdminId in token.");
+
+            var existingMember = await _context.LabMembers
+                .FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
 
             var newMember = new LabMember
             {
@@ -51,6 +62,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                 PasswordHash = _passwordHasher.HashPassword(null, dto.Password),
                 CreatedBy = createdBy
             };
+
+            if (existingMember != null)
+            {
+                return BadRequest($"{userDetails.user_firstname} {userDetails.user_lastname}'s HFID {dto.HFID} already exists as {newMember.Role}.");
+            }
 
             _context.LabMembers.Add(newMember);
             await _context.SaveChangesAsync();
@@ -68,6 +84,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 EpochTime = newMember.EpochTime
             });
         }
+
+
 
 
 

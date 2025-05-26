@@ -10,6 +10,7 @@ namespace HFiles_Backend.Application.DTOs.Labs
     {
         public string? HFID { get; set; } 
         public string? BranchName { get; set; } 
-        public string? Password { get; set; } 
+        public string? Password { get; set; }
+        public string? ConfirmPassword { get; set; }
     }
 }

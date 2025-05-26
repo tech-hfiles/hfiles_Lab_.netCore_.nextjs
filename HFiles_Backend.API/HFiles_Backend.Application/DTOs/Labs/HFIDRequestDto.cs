@@ -6,9 +6,8 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class LabUpdateDto
+    public class HFIDRequestDto
     {
-        public int Id { get; set; } 
-        public string? Address { get; set; }
+        public string? HFID { get; set; }
     }
 }
