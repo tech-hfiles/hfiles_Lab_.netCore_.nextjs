@@ -12,7 +12,7 @@ using HFiles_Backend.Domain.Entities.Labs;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabOtpController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -24,14 +24,16 @@ namespace HFiles_Backend.API.Controllers.Labs
             _emailService = emailService;
         }
 
-        [HttpPost("generate")]
-        public async Task<IActionResult> GenerateOtp([FromBody] LabOtpRequestDto dto)
-        {
-            if (string.IsNullOrWhiteSpace(dto.Email))
-                return BadRequest("Email is required.");
 
-            if (string.IsNullOrWhiteSpace(dto.LabName))
-                return BadRequest("LabName is required.");
+
+
+
+        // Generates OTP for Signup
+        [HttpPost("labs/signup/otp")]
+        public async Task<IActionResult> GenerateOtp([FromBody] OtpRequestDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var otp = new Random().Next(100000, 999999).ToString();
             var now = DateTime.UtcNow;
@@ -74,8 +76,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return StatusCode(500, $"Error sending email: {ex.Message}");
             }
 
-            return Ok("OTP has been sent to your email.");
+            return Ok(new
+            {
+                message = "OTP has been sent to your email.",
+                expiresInMinutes = 5
+            });
         }
-
     }
 }

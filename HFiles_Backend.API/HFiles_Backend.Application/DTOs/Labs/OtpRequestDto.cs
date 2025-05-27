@@ -1,0 +1,20 @@
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace HFiles_Backend.Application.DTOs.Labs
+{
+    public class OtpRequestDto
+    {
+        [Required(ErrorMessage = "LabName is required.")]
+        public string LabName { get; set; } = null!;
+
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Invalid Email Address.")]
+        public string Email { get; set; } = null!;
+
+    }
+}

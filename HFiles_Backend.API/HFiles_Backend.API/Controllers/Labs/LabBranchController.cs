@@ -9,7 +9,7 @@ using HFiles_Backend.Infrastructure.Data;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabBranchController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -21,16 +21,15 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
+
         // Create Branch
+        [HttpPost("labs/branches")]
         [Authorize]
-        [HttpPost("create")]
-        public async Task<IActionResult> CreateBranch([FromBody] LabBranchDto dto)
+        public async Task<IActionResult> CreateBranch([FromBody] BranchDto dto)
         {
-            if (string.IsNullOrWhiteSpace(dto.LabName) ||
-                string.IsNullOrWhiteSpace(dto.Email) ||
-                string.IsNullOrWhiteSpace(dto.PhoneNumber) ||
-                string.IsNullOrWhiteSpace(dto.Pincode))
-                return BadRequest("All fields are required.");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (userIdClaim == null)
@@ -78,58 +77,55 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Get All Lab Branches
-        [HttpGet]
+
+        // Get All Labs (Main Lab + All Branches)
+        [HttpGet("labs")]
         [Authorize]
         public async Task<IActionResult> GetLabBranches()
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
                 return Unauthorized("Invalid or missing LabId claim.");
-            }
 
             var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
             if (loggedInLab == null)
-            {
                 return NotFound($"Lab with ID {labId} not found.");
-            }
 
             int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
             var mainLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == mainLabId);
             if (mainLab == null)
-            {
                 return NotFound($"Main lab with ID {mainLabId} not found.");
-            }
 
             var branches = await _context.LabSignupUsers
                 .Where(l => l.LabReference == mainLabId)
                 .ToListAsync();
 
-            var result = new List<object>();
-
-            result.Add(new
+            var result = new List<LabInfoDto>
             {
-                labId = mainLab.Id,
-                labName = mainLab.LabName,
-                HFID = mainLab.HFID,
-                Email = mainLab.Email,
-                PhoneNumber = mainLab.PhoneNumber, 
-                Address = mainLab.Address,
-                ProfilePhoto = mainLab.ProfilePhoto,
-                labType = "mainLab"
-            });
+                new LabInfoDto
+                {
+                    LabId = mainLab.Id,
+                    LabName = mainLab.LabName,
+                    HFID = mainLab.HFID,
+                    Email = mainLab.Email,
+                    PhoneNumber = mainLab.PhoneNumber,
+                    Address = mainLab.Address,
+                    ProfilePhoto = mainLab.ProfilePhoto,
+                    LabType = "mainLab"
+                }
+            };
 
-            result.AddRange(branches.Select(branch => new
+            result.AddRange(branches.Select(branch => new LabInfoDto
             {
-                labId = branch.Id,
-                labName = branch.LabName,
+                LabId = branch.Id,
+                LabName = branch.LabName,
                 HFID = branch.HFID,
                 Email = branch.Email,
+                PhoneNumber = branch.PhoneNumber,
                 Address = branch.Address,
                 ProfilePhoto = branch.ProfilePhoto,
-                labType = "branch"
+                LabType = "branch"
             }));
 
             return Ok(result);
@@ -139,8 +135,9 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
         // Deletes Branch 
-        [HttpDelete("delete/{branchId}")]
+        [HttpDelete("labs/branches/{branchId}")]
         [Authorize]
         public async Task<IActionResult> DeleteBranch(int branchId)
         {
@@ -152,19 +149,16 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             var branch = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == branchId);
             if (branch == null)
-            {
                 return NotFound($"Branch with ID {branchId} not found.");
-            }
 
             if (branch.LabReference == 0)
-            {
                 return BadRequest("Cannot delete the main lab. Only branches can be deleted.");
-            }
 
             if (branch.LabReference != labId)
-            {
-                return Unauthorized("You do not have permission to delete this branch.");
-            }
+                return Forbid("You do not have permission to delete this branch.");
+
+            if (branch.DeletedBy != 0)
+                return BadRequest("This branch has already been deleted.");
 
             branch.DeletedBy = labId;
             await _context.SaveChangesAsync();

@@ -7,9 +7,10 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class HFIDRequestDto
+    public class PasswordResetRequestDto
     {
-        [Required(ErrorMessage = "HFID is required.")]
-        public string HFID { get; set; } = null!;
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Invalid email address.")]
+        public string Email { get; set; } = null!;
     }
 }

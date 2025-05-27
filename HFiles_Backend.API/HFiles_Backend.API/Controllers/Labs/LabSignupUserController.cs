@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Authorization;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabSignupUserController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -30,18 +30,16 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
-        // Lab Sign Up
-        [HttpPost("labsignup")]
-        public async Task<IActionResult> Signup(LabSignupDto dto)
+
+
+
+        // Creates Lab 
+        [HttpPost("labs")]
+        public async Task<IActionResult> Signup([FromBody] SignupDto dto)
         {
-            if (string.IsNullOrWhiteSpace(dto.LabName)) return BadRequest("Lab name is required.");
-            if (string.IsNullOrWhiteSpace(dto.Email)) return BadRequest("Email is required.");
-            if (string.IsNullOrWhiteSpace(dto.PhoneNumber)) return BadRequest("Phone number is required.");
-            if (string.IsNullOrWhiteSpace(dto.Pincode)) return BadRequest("Pincode is required.");
-            if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
-            if (string.IsNullOrWhiteSpace(dto.ConfirmPassword)) return BadRequest("Confirm password is required.");
-            if (string.IsNullOrWhiteSpace(dto.Otp)) return BadRequest("OTP is required.");
-            if (dto.Password != dto.ConfirmPassword) return BadRequest("Passwords do not match.");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             if (await _context.LabSignupUsers.AnyAsync(u => u.Email == dto.Email))
                 return BadRequest("Email already registered.");
 
@@ -50,15 +48,22 @@ namespace HFiles_Backend.API.Controllers.Labs
                 .OrderByDescending(o => o.CreatedAt)
                 .FirstOrDefaultAsync();
 
-            if (otpEntry == null) return BadRequest("OTP not generated for this email.");
-            if (otpEntry.ExpiryTime < DateTime.UtcNow) return BadRequest("OTP has expired.");
-            if (otpEntry.OtpCode != dto.Otp) return BadRequest("Invalid OTP.");
+            if (otpEntry == null)
+                return BadRequest("OTP not generated for this email.");
 
+            if (otpEntry.ExpiryTime < DateTime.UtcNow)
+                return BadRequest("OTP has expired.");
+
+            if (otpEntry.OtpCode != dto.Otp)
+                return BadRequest("Invalid OTP.");
+
+            const string HFilesEmail = "hfilessocial@gmail.com";
+            const string HFIDPrefix = "HF";
             var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var last6Epoch = epochTime % 1000000;
             var labPrefix = dto.LabName.Length >= 3 ? dto.LabName.Substring(0, 3).ToUpper() : dto.LabName.ToUpper();
             var randomDigits = new Random().Next(1000, 9999);
-            var hfid = $"HF{last6Epoch}{labPrefix}{randomDigits}";
+            var hfid = $"{HFIDPrefix}{last6Epoch}{labPrefix}{randomDigits}";
 
             var user = new LabSignupUser
             {
@@ -118,7 +123,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             try
             {
                 await _emailService.SendEmailAsync(dto.Email, "Hfiles Registration Received", userEmailBody);
-                await _emailService.SendEmailAsync("hfilessocial@gmail.com", "New Lab Signup", adminEmailBody);
+                await _emailService.SendEmailAsync(HFilesEmail, "New Lab Signup", adminEmailBody);
             }
             catch (Exception ex)
             {
@@ -131,10 +136,11 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
         // Update Address and Profile Photo for Lab
-        [HttpPost("update-profile")]
+        [HttpPatch("labs/update")]
         [Authorize]
-        public async Task<IActionResult> UpdateLabUserProfile([FromForm] LabUpdateDto dto, IFormFile? profilephoto)
+        public async Task<IActionResult> UpdateLabUserProfile([FromForm] ProfileUpdateDto dto, IFormFile? ProfilePhoto)
         {
             var user = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.Id);
             if (user == null)
@@ -143,7 +149,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (!string.IsNullOrEmpty(dto.Address))
                 user.Address = dto.Address;
 
-            if (profilephoto != null && profilephoto.Length > 0)
+            if (ProfilePhoto != null && ProfilePhoto.Length > 0)
             {
                 string uploadsFolder = Path.Combine("wwwroot", "uploads");
                 Directory.CreateDirectory(uploadsFolder);
@@ -151,12 +157,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                 DateTime createdAt = DateTimeOffset.FromUnixTimeSeconds(user.CreatedAtEpoch).UtcDateTime;
                 string formattedTime = createdAt.ToString("dd-MM-yyyy-HH-mm-ss");
 
-                string fileName = $"{Path.GetFileNameWithoutExtension(profilephoto.FileName)}_{formattedTime}{Path.GetExtension(profilephoto.FileName)}";
+                string fileName = $"{Path.GetFileNameWithoutExtension(ProfilePhoto.FileName)}_{formattedTime}{Path.GetExtension(ProfilePhoto.FileName)}";
                 string filePath = Path.Combine(uploadsFolder, fileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
                 {
-                    await profilephoto.CopyToAsync(stream);
+                    await ProfilePhoto.CopyToAsync(stream);
                 }
 
                 user.ProfilePhoto = fileName; 
@@ -174,7 +180,5 @@ namespace HFiles_Backend.API.Controllers.Labs
                 UpdatedProfilePhoto = user.ProfilePhoto
             });
         }
-
-
     }
 }

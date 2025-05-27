@@ -11,7 +11,7 @@ using HFiles_Backend.Infrastructure.Data;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabResetPasswordController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -25,16 +25,20 @@ namespace HFiles_Backend.API.Controllers.Labs
             _passwordHasher = passwordHasher;
         }
 
-        // Request Password Reset (Send Reset Link)
-        [HttpPost("request")]
-        public async Task<IActionResult> RequestPasswordReset([FromQuery] string email)
-        {
-            if (string.IsNullOrEmpty(email))
-                return BadRequest("Email is required.");
 
-            var labUser = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Email == email);
+
+
+
+        // Send email to reset password
+        [HttpPost("labs/password-reset/request")]
+        public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetRequestDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var labUser = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Email == dto.Email);
             if (labUser == null)
-                return NotFound("No lab user found with this email.");
+                return NotFound(new { message = "No lab user found with this email." });
 
             string resetLink = $"https://hfiles.co.in/forgot-password";
             string emailBody = $@"
@@ -47,37 +51,43 @@ namespace HFiles_Backend.API.Controllers.Labs
                 </body>
                 </html>";
 
-            await _emailService.SendEmailAsync(labUser.Email, $"Password Reset Request for {labUser.LabName}", emailBody);
+            try
+            {
+                await _emailService.SendEmailAsync(labUser.Email, $"Password Reset Request for {labUser.LabName}", emailBody);
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { message = "Error sending email. Please try again later." });
+            }
 
-            return Ok($"Password reset link sent to your registered email for {labUser.LabName}.");
+            return Ok(new { message = $"Password reset link sent to your registered email for {labUser.LabName}." });
         }
 
 
 
-        // Reset Password (Save New Password)
-        [HttpPost("update")]
-        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
-        {
-            if (string.IsNullOrEmpty(dto.Email) || string.IsNullOrEmpty(dto.NewPassword) || string.IsNullOrEmpty(dto.ConfirmPassword))
-                return BadRequest("All fields are required.");
 
-            if (dto.NewPassword != dto.ConfirmPassword)
-                return BadRequest("New Password and Confirm Password must match.");
+
+
+
+        // Reset Password
+        [HttpPut("labs/password-reset")]
+        public async Task<IActionResult> ResetPassword([FromBody] PasswordResetDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var labUser = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Email == dto.Email);
             if (labUser == null)
                 return NotFound("No lab user found with this email.");
 
-            var passwordVerification = _passwordHasher.VerifyHashedPassword(null, labUser.PasswordHash, dto.NewPassword);
-
-            if (passwordVerification == PasswordVerificationResult.Success)
-                return BadRequest("This password is already registered. Please proceed to Lab Login, or if you wish to change your password, enter a different one.");
+            var verificationResult = _passwordHasher.VerifyHashedPassword(null, labUser.PasswordHash, dto.NewPassword);
+            if (verificationResult == PasswordVerificationResult.Success)
+                return BadRequest("This password is already in use. Please choose a different one.");
 
             labUser.PasswordHash = _passwordHasher.HashPassword(null, dto.NewPassword);
             await _context.SaveChangesAsync();
 
-            return Ok("Password successfully reset.");
+            return Ok(new { message = "Password successfully reset." });
         }
-
     }
 }

@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabLoginController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -27,10 +27,17 @@ namespace HFiles_Backend.API.Controllers.Labs
             _passwordHasher = passwordHasher;
         }
 
+
+
+
+
         // Sends OTP
-        [HttpPost("send-otp")]
+        [HttpPost("labs/otp")]
         public async Task<IActionResult> SendOtp([FromBody] EmailRequestDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (user == null) return BadRequest("Email not registered.");
 
@@ -67,10 +74,15 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
+
         // Login via Email + OTP
-        [HttpPost("login-otp")]
+        [HttpPost("labs/login/otp")]
         public async Task<IActionResult> LoginViaOtp([FromBody] OtpLoginDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (user == null) return BadRequest("Email not registered.");
 
@@ -96,10 +108,15 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+
+
         // Login via Email + Password
-        [HttpPost("login-password")]
+        [HttpPost("labs/login/password")]
         public async Task<IActionResult> LoginViaPassword([FromBody] PasswordLoginDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (user == null) return BadRequest("Email not registered.");
 

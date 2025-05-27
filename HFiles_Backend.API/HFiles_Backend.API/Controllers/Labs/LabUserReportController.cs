@@ -10,7 +10,7 @@ using Newtonsoft.Json;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
-    [Route("api/[controller]")]
+    [Route("api/")]
     [ApiController]
     [Authorize]
     public class LabUserReportController : ControllerBase
@@ -60,10 +60,12 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Save Lab Reports to Database
-        [HttpPost("upload-batch")]
-        public async Task<IActionResult> UploadReports([FromForm] LabUserReportBatchUploadDTO dto)
+        // Upload single/batch lab reports of muliple users
+        [HttpPost("labs/reports/upload")]
+        public async Task<IActionResult> UploadReports([FromForm] UserReportBatchUploadDTO dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
 
@@ -76,7 +78,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             Console.WriteLine("Logged-in LabId: " + labId);
 
             if (dto.Entries == null || dto.Entries.Count == 0)
-                return BadRequest("No entries provided.");
+                return BadRequest("No entries provided in the payload.");
 
             string uploadsFolder = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads");
             if (!Directory.Exists(uploadsFolder))
@@ -219,7 +221,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         // Fetch All Reports of Selected User
-        [HttpGet("user/{userId}")]
+        [HttpGet("labs/reports/{userId}")]
         public async Task<IActionResult> GetLabUserReportsByUserId(int userId)
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
@@ -233,7 +235,15 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return NotFound($"LabId {labId} not found.");
 
             var userDetails = await _context.Set<UserDetails>()
-                .Select(u => new { u.user_id, u.user_membernumber, u.user_firstname, u.user_lastname, u.user_email, u.user_image })
+                .Select(u => new
+                {
+                    u.user_id,
+                    u.user_membernumber,
+                    u.user_firstname,
+                    u.user_lastname,
+                    u.user_email,
+                    u.user_image
+                })
                 .FirstOrDefaultAsync(u => u.user_id == userId);
 
             if (userDetails == null)
@@ -263,34 +273,36 @@ namespace HFiles_Backend.API.Controllers.Labs
                 .Where(ur => ur.UserId == userId && relatedLabIds.Contains(ur.LabId) && ur.UploadedBy == "Lab")
                 .ToListAsync();
 
-            var labUserReports = await _context.LabUserReports
+            var labUserReportsDict = await _context.LabUserReports
                 .Where(lur => lur.UserId == userId && relatedLabIds.Contains(lur.LabId))
-                .OrderBy(lur => lur.EpochTime)
-                .ToListAsync();
+                .ToDictionaryAsync(lur => lur.Id, lur => lur);
 
-            if (!userReports.Any() && !labUserReports.Any())
+            if (!userReports.Any() && !labUserReportsDict.Any())
                 return NotFound($"No reports found for UserId {userId} in related labs.");
+
+            var allBranchIds = labUserReportsDict.Values.Select(l => l.BranchId).Distinct().ToList();
+
+            var branchNamesDict = await _context.LabSignupUsers
+                .Where(lsu => allBranchIds.Contains(lsu.Id))
+                .ToDictionaryAsync(lsu => lsu.Id, lsu => lsu.LabName);
 
             var responseData = userReports.Select(userReport =>
             {
-                var matchedLabReport = labUserReports
-                    .FirstOrDefault(lur => lur.UserId == userReport.UserId && lur.LabId == userReport.LabId);
-
-                int branchId = matchedLabReport?.LabId ?? 0;
-                long epochTime = matchedLabReport?.EpochTime ?? 0;
-                int userReportId = userReport.Id;
                 int labUserReportId = userReport.LabUserReportId ?? 0;
 
-                var branchEntry = _context.LabSignupUsers.FirstOrDefault(lsu => lsu.Id == branchId);
-                string branchName = branchEntry?.LabName ?? "Unknown";
+                labUserReportsDict.TryGetValue(labUserReportId, out var matchedLabReport);
+                int branchId = matchedLabReport?.BranchId ?? 0;
+                long epochTime = matchedLabReport?.EpochTime ?? 0;
 
                 string createdDate = epochTime > 0
                     ? DateTimeOffset.FromUnixTimeSeconds(epochTime).UtcDateTime.ToString("dd-MM-yyyy")
                     : "";
 
+                string branchName = branchNamesDict.ContainsKey(branchId) ? branchNamesDict[branchId] : currentLab.LabName;
+
                 return new
                 {
-                    Id = userReportId,
+                    Id = userReport.Id,
                     filename = userReport.ReportName,
                     fileURL = userReport.ReportUrl,
                     labName = currentLab.LabName,
@@ -304,7 +316,6 @@ namespace HFiles_Backend.API.Controllers.Labs
             return Ok(new
             {
                 Message = "Reports fetched successfully.",
-
                 UserDetails = new
                 {
                     UserId = userId,
@@ -313,7 +324,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                     Email = userDetails.user_email,
                     UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image
                 },
-
                 Reports = responseData
             });
         }
@@ -322,8 +332,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Fetch All Distinct Users for All Dates
-        [HttpGet("lab/all-reports")]
+        // Fetch All Distinct Users for All Dates (Currently we do not use this API in Frontend)
+        [HttpGet("LabReports/all")]
         public async Task<IActionResult> GetLabUserReports()
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
@@ -383,7 +393,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         // Fetch All Distinct Users Based on Selection of Date
-        [HttpGet("lab/reports")]
+        [HttpGet("labs/reports")]
         public async Task<IActionResult> GetLabUserReports([FromQuery] int labId, [FromQuery] string? startDate, [FromQuery] string? endDate)
         {
             if (labId <= 0)
@@ -467,12 +477,13 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
-
         // Resend Reports using LabUserReportID
-        [HttpPost("resend-report")]
-        public async Task<IActionResult> ResendReport([FromBody] LabResendReportDto dto)
+        [HttpPost("labs/reports/resend")]
+        public async Task<IActionResult> ResendReport([FromBody] ResendReportDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             Console.WriteLine($"Received Payload: {JsonConvert.SerializeObject(dto, Formatting.Indented)}");
 
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
@@ -522,9 +533,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 Results = updatedReports
             });
         }
-
-
     }
-
 }
 

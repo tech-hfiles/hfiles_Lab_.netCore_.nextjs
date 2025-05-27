@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/")]
     public class LabMemberController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -23,20 +23,16 @@ namespace HFiles_Backend.API.Controllers.Labs
         }
 
 
-        // Create Members
-        [HttpPost("create")]
-        [Authorize]
-        public async Task<IActionResult> AddMember([FromBody] LabMemberDto dto)
-        {
-            if (string.IsNullOrWhiteSpace(dto.HFID)) return BadRequest("HFID is required.");
-            if (string.IsNullOrWhiteSpace(dto.BranchName)) return BadRequest("Branch name is required.");
-            if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
-            if (string.IsNullOrWhiteSpace(dto.ConfirmPassword)) return BadRequest("Confirm Password is required.");
 
-            if (dto.Password != dto.ConfirmPassword)
-            {
-                return BadRequest("Passwords do not match.");
-            }
+
+
+        // Create Member
+        [HttpPost("labs/members")]
+        [Authorize]
+        public async Task<IActionResult> AddMember([FromBody] CreateMemberDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var userDetails = await _context.Set<UserDetails>()
                 .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
@@ -44,16 +40,21 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return NotFound($"No user found with HFID {dto.HFID}.");
 
             var labEntry = await _context.LabSignupUsers
-                .FirstOrDefaultAsync(l => l.LabName == dto.BranchName);
+                .FirstOrDefaultAsync(l => l.Id == dto.BranchId); 
             if (labEntry == null)
-                return NotFound($"No lab found with Branch Name {dto.BranchName}.");
+                return NotFound($"No lab found with Branch ID {dto.BranchId}.");
 
             var createdByClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
             if (createdByClaim == null || !int.TryParse(createdByClaim.Value, out int createdBy))
                 return Unauthorized("Invalid or missing LabAdminId in token.");
 
             var existingMember = await _context.LabMembers
-                .FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
+                .FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.BranchId); 
+
+            if (existingMember != null)
+            {
+                return BadRequest($"{userDetails.user_firstname} {userDetails.user_lastname}'s HFID {dto.HFID} already exists as {existingMember.Role} in Branch {dto.BranchId}.");
+            }
 
             var newMember = new LabMember
             {
@@ -62,11 +63,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 PasswordHash = _passwordHasher.HashPassword(null, dto.Password),
                 CreatedBy = createdBy
             };
-
-            if (existingMember != null)
-            {
-                return BadRequest($"{userDetails.user_firstname} {userDetails.user_lastname}'s HFID {dto.HFID} already exists as {newMember.Role}.");
-            }
 
             _context.LabMembers.Add(newMember);
             await _context.SaveChangesAsync();
@@ -89,12 +85,14 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
-
-        // Promote members to Admins API
-        [HttpPost("promote")]
-        public async Task<IActionResult> PromoteMembers([FromBody] LabPromoteMembersDto dto)
+        // Promote Members to Admins API
+        [HttpPost("labs/members/promote")]
+        [Authorize]
+        public async Task<IActionResult> PromoteLabMembers([FromBody] PromoteMembersRequestDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             if (dto.Ids == null || !dto.Ids.Any())
                 return BadRequest("No member IDs provided for promotion.");
 
@@ -106,31 +104,46 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (roleClaim == null)
                 return Unauthorized("Invalid or missing Role in token.");
 
-            string promotingRole = roleClaim.Value; 
+            string promotingRole = roleClaim.Value;
 
-            var promotedMembers = new List<object>();
+            var promotionResults = new List<PromoteMemberResultDto>();
 
             foreach (var memberId in dto.Ids)
             {
                 var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == memberId);
                 if (member == null)
                 {
-                    promotedMembers.Add(new { Id = memberId, Status = "Failed", Reason = "Member not found" });
+                    promotionResults.Add(new PromoteMemberResultDto
+                    {
+                        Id = memberId,
+                        Status = "Failed",
+                        Reason = "Member not found"
+                    });
+                    continue;
+                }
+
+                if (member.Role == "Admin")
+                {
+                    promotionResults.Add(new PromoteMemberResultDto
+                    {
+                        Id = member.Id,
+                        Status = "Skipped",
+                        Reason = "Already an Admin"
+                    });
                     continue;
                 }
 
                 member.Role = "Admin";
-                member.PromotedBy = labAdminId; 
+                member.PromotedBy = labAdminId;
                 _context.LabMembers.Update(member);
 
-                promotedMembers.Add(new
+                promotionResults.Add(new PromoteMemberResultDto
                 {
                     Id = member.Id,
-                    UserId = member.UserId,
-                    LabId = member.LabId,
-                    NewRole = member.Role,
+                    NewRole = "Admin",
+                    Reason = "Promoted from Member to Admin",
                     PromotedBy = labAdminId,
-                    PromotedByRole = promotingRole 
+                    PromotedByRole = promotingRole
                 });
             }
 
@@ -138,16 +151,17 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             return Ok(new
             {
-                Message = "Members promoted successfully.",
-                PromotedMembers = promotedMembers
+                Message = "Member promotions completed.",
+                Results = promotionResults
             });
         }
 
 
 
 
+
         // Delete member
-        [HttpDelete("delete/{id}")]
+        [HttpDelete("labs/members/{id}")]
         public async Task<IActionResult> DeleteLabMember(int id)
         {
             var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == id);
@@ -179,10 +193,5 @@ namespace HFiles_Backend.API.Controllers.Labs
                 DeletedByRole = deletedByRole 
             });
         }
-
-
-
-
-
     }
 }

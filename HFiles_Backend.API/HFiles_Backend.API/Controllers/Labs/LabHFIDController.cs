@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Application.DTOs.Labs;
+using System.ComponentModel.DataAnnotations;
 namespace HFiles_Backend.API.Controllers.Labs
 
 {
@@ -16,37 +17,41 @@ namespace HFiles_Backend.API.Controllers.Labs
             _context = context;
         }
 
-        [HttpGet("LabHFID")]
-        public async Task<IActionResult> GetHFIDByEmail([FromQuery] string email)
-        {
-            if (string.IsNullOrWhiteSpace(email))
-                return BadRequest("Email is required.");
 
-            var user = await _context.LabSignupUsers
+
+
+
+        // Verify HFID for Labs
+        [HttpGet("labs/hfid")]
+        public async Task<IActionResult> GetHFIDByEmail([FromQuery][Required] string email)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var lab = await _context.LabSignupUsers
                 .Where(u => u.Email == email)
                 .Select(u => new { u.Email, u.LabName, u.HFID })
                 .FirstOrDefaultAsync();
 
-            if (user == null)
+            if (lab == null)
                 return NotFound("Lab not found.");
 
-            if (string.IsNullOrEmpty(user.HFID))
+            if (string.IsNullOrEmpty(lab.HFID))
                 return NotFound("HFID not generated yet for this user.");
 
-            return Ok(new
-            {
-                user.Email,
-                user.LabName,
-                user.HFID
-            });
+            return Ok(lab);
         }
 
 
-        [HttpPost("verify-HFID")]
+
+
+
+        // Verify HFID for Users
+        [HttpPost("users/hfid")]
         public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequestDto dto)
         {
-            if (dto == null || string.IsNullOrWhiteSpace(dto.HFID))
-                return BadRequest("HFID is required in the request body.");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
             var userDetails = await _context.UserDetails
                 .Where(u => u.user_membernumber == dto.HFID)

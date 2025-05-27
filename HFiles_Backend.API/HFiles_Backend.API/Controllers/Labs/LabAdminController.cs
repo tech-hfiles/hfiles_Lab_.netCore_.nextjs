@@ -24,21 +24,23 @@ namespace HFiles_Backend.Controllers
             _passwordHasher = passwordHasher;
             _jwtTokenService = jwtTokenService;
         }
+        public static class UserRoles
+        {
+            public const string SuperAdmin = "Super Admin";
+            public const string Admin = "Admin";
+            public const string Member = "Member";
+        }
+
+
+
+
 
         // Create Lab Admin
-        [HttpPost("LabAdmin/create")]
-        public async Task<IActionResult> CreateLabAdmin([FromBody] LabAdminDto dto)
+        [HttpPost("labs/super-admins")]
+        public async Task<IActionResult> CreateLabAdmin([FromBody] CreateSuperAdminDto dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
-
-            if (string.IsNullOrWhiteSpace(dto.Password)) return BadRequest("Password is required.");
-            if (string.IsNullOrWhiteSpace(dto.ConfirmPassword)) return BadRequest("Confirm Password is required.");
-
-            if (dto.Password != dto.ConfirmPassword)
-            {
-                return BadRequest("Passwords do not match.");
-            }
 
             var userId = dto.UserId;
             var email = dto.Email;
@@ -103,16 +105,12 @@ namespace HFiles_Backend.Controllers
 
 
 
-
         // Login Lab Admin and Lab Members
-        [HttpPost("LabUser/login")]
-        public async Task<IActionResult> LabAdminLogin([FromBody] LabAdminLoginDto dto)
+        [HttpPost("labs/users/login")]
+        public async Task<IActionResult> LabAdminLogin([FromBody] UserLoginDto dto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
-
-            if (dto.UserId == null || string.IsNullOrEmpty(dto.Email))
-                return Unauthorized("User ID and Email must be provided.");
 
             var userDetails = await _context.Set<UserDetails>()
                 .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
@@ -151,7 +149,7 @@ namespace HFiles_Backend.Controllers
                     .Equals(PasswordVerificationResult.Success))
                     return Unauthorized("Invalid password.");
 
-                var token = _jwtTokenService.GenerateToken(member.UserId, dto.Email, member.Id, dto.Role);
+                var token = _jwtTokenService.GenerateToken(dto.UserId.Value, dto.Email, member.Id, dto.Role);
                 return Ok(new
                 {
                     Message = "Login successful.",
@@ -160,7 +158,6 @@ namespace HFiles_Backend.Controllers
                     
                 });
             }
-
             return BadRequest("Invalid role specified.");
         }
 
@@ -168,26 +165,28 @@ namespace HFiles_Backend.Controllers
 
 
 
-
         // Get all users (Super Admin/Admin/Members)
-        [HttpGet("LabUsers")]
+        [HttpGet("labs/users")]
         public async Task<IActionResult> GetAllLabUsers([FromQuery] int labId)
         {
-            var admins = await (from a in _context.LabAdmins
-                                join u in _context.UserDetails on a.UserId equals u.user_id
-                                where a.LabId == labId
-                                select new
-                                {
-                                    AdminId = a.Id,
-                                    UserId = a.UserId,
-                                    LabId = a.LabId,
-                                    HFID = u.user_membernumber,
-                                    Name = $"{u.user_firstname} {u.user_lastname}",
-                                    Email = u.user_email,
-                                    Role = "Super Admin",
-                                    ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image,
-                                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(a.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
-                                }).ToListAsync();
+            var labEntry = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
+            if (labEntry == null)
+                return NotFound($"Lab with ID {labId} not found.");
+
+            int mainLabId = labEntry.LabReference == 0 ? labId : labEntry.LabReference;
+
+            var superAdmin = await (from a in _context.LabAdmins
+                                    join u in _context.UserDetails on a.UserId equals u.user_id
+                                    where a.LabId == mainLabId && a.IsMain == 1
+                                    select new UserDto
+                                    {
+                                        MemberId = a.Id,
+                                        HFID = u.user_membernumber,
+                                        Name = $"{u.user_firstname} {u.user_lastname}",
+                                        Email = u.user_email,
+                                        Role = UserRoles.SuperAdmin,
+                                        ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
+                                    }).FirstOrDefaultAsync();
 
             var membersList = await (from m in _context.LabMembers
                                      join u in _context.UserDetails on m.UserId equals u.user_id
@@ -196,79 +195,74 @@ namespace HFiles_Backend.Controllers
                                      {
                                          MemberId = m.Id,
                                          UserId = m.UserId,
-                                         LabId = m.LabId,
                                          HFID = u.user_membernumber,
                                          Name = $"{u.user_firstname} {u.user_lastname}",
                                          Email = u.user_email,
                                          Role = m.Role,
                                          CreatedBy = m.CreatedBy,
                                          PromotedBy = m.PromotedBy,
-                                         DeletedBy = m.DeletedBy,
-                                         ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image,
-                                         CreatedAt = DateTimeOffset.FromUnixTimeSeconds(m.EpochTime).UtcDateTime.ToString("dd-MM-yyyy")
+                                         ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
                                      }).ToListAsync();
 
-            var labAdmins = await _context.LabAdmins.Where(a => a.LabId == labId).ToListAsync();
-            var labMembers = await _context.LabMembers.ToListAsync();
-            var userDetails = await _context.UserDetails.ToListAsync();
+            var labAdmins = await _context.LabAdmins
+                .Where(a => a.LabId == labId)
+                .ToDictionaryAsync(a => a.Id, a => a);
 
-            var members = membersList.Select(m =>
+            var labMembers = await _context.LabMembers
+                .ToDictionaryAsync(m => m.Id, m => m);
+
+            var userDetails = await _context.UserDetails
+                .ToDictionaryAsync(u => u.user_id, u => u);
+
+            var memberDtos = membersList.Select(m =>
             {
                 string promotedByName = "Not Promoted Yet";
+                string createdByName = "Unknown";
 
-                if (labAdmins.Any(a => a.Id == m.PromotedBy))
+                if (labAdmins.ContainsKey(m.PromotedBy))
                 {
                     promotedByName = "Main";
                 }
-                else
+                else if (labMembers.TryGetValue(m.PromotedBy, out var promotingMember) &&
+                         userDetails.TryGetValue(promotingMember.UserId, out var promoterDetails))
                 {
-                    var promotingMember = labMembers.FirstOrDefault(lm => lm.Id == m.PromotedBy);
-                    if (promotingMember != null)
-                    {
-                        var promoterDetails = userDetails.FirstOrDefault(u => u.user_id == promotingMember.UserId);
-                        if (promoterDetails != null)
-                        {
-                            promotedByName = promoterDetails.user_firstname;
-                        }
-                    }
+                    promotedByName = promoterDetails.user_firstname;
                 }
 
-                return new
+                if (labAdmins.ContainsKey(m.CreatedBy))
                 {
-                    m.MemberId,
-                    m.UserId,
-                    //m.LabId,
-                    m.HFID,
-                    m.Name,
-                    m.Email,
-                    m.Role,
-                    //m.CreatedBy,
-                    m.PromotedBy,
+                    createdByName = "Main";
+                }
+                else if (labMembers.TryGetValue(m.CreatedBy, out var creatingMember) &&
+                         userDetails.TryGetValue(creatingMember.UserId, out var creatorDetails))
+                {
+                    createdByName = creatorDetails.user_firstname;
+                }
+
+                return new UserDto
+                {
+                    MemberId = m.MemberId,
+                    HFID = m.HFID,
+                    Name = m.Name,
+                    Email = m.Email,
+                    Role = m.Role,
+                    CreatedByName = createdByName,
                     PromotedByName = promotedByName,
-                    m.DeletedBy,
-                    m.ProfilePhoto,
-                    m.CreatedAt
+                    ProfilePhoto = m.ProfilePhoto
                 };
             }).ToList();
 
-            if (!admins.Any() && !members.Any())
+            if (superAdmin == null && !memberDtos.Any())
                 return NotFound($"No active admins or members found for LabId {labId}.");
 
             return Ok(new
             {
                 Message = "Lab users fetched successfully.",
                 LabId = labId,
-                Admins = admins,
-                Members = members
+                MainLabId = mainLabId,
+                SuperAdmin = superAdmin,
+                Members = memberDtos
             });
         }
-
-
-
-
-
-
-
-
     }
 }
