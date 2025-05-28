@@ -22,7 +22,7 @@ const DefaultLayout : React.FC<HomeProps> = ({ children }) => {
         
 
         {/* Main Children Content */}
-        <main className="flex-grow overflow-y-auto pb-25 mx-auto ">{children}</main>
+        <main className="flex-grow overflow-y-auto lg:pb-15 sm:pb-25 mx-auto ">{children}</main>
       </div>
 
       {/* Footer */}

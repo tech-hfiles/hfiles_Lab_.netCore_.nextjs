@@ -6,6 +6,8 @@ import * as Yup from "yup";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCirclePlus, faCircleXmark } from "@fortawesome/free-solid-svg-icons";
 import { AddLabUserReport } from "@/services/labServiceApi";
+import { toast, ToastContainer } from "react-toastify";
+
 
 interface FileWithReport {
   file: File;
@@ -36,13 +38,13 @@ interface ApiPayload {
 
 const reportTypes = [
   { Id: 3, Name: "LAB REPORT" },
-  { Id: 4, Name: "DENTAL REPORT " },
+  { Id: 4, Name: "DENTAL REPORT" },
   { Id: 5, Name: "IMMUNIZATION" },
-  { Id: 6, Name: "MEDICATIONS / PRESCRIPTION" },
+  { Id: 6, Name: "MEDICATIONS/PRESCRIPTION" },
   { Id: 7, Name: "RADIOLOGY" },
   { Id: 8, Name: "OPTHALMOLOGY" },
   { Id: 9, Name: "SPECIAL REPORT" },
-  { Id: 10, Name: "INVOICES / MEDICLAIM INSURANCE" },
+  { Id: 10, Name: "INVOICES/MEDICLAIM INSURANCE" },
 ];
 
 const fileWithReportSchema = Yup.object().shape({
@@ -85,82 +87,61 @@ const HTransferPage: React.FC = () => {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+const transformPayload = (patients: Patient[]) => {
+  const formData = new FormData();
+  
+
+  patients.forEach((patient, index) => {
+    formData.append(`Entries[${index}].HFID`, patient.hfId);
+    formData.append(`Entries[${index}].Email`, patient.email);
+    formData.append(`Entries[${index}].Name`, patient.patientName);
+    formData.append(`Entries[${index}].BranchId`, "0");
+
+      const uniqueReportNames = new Set<string>();
+    patient.files.forEach((fileObj) => {
+      uniqueReportNames.add(fileObj.Name);
+    });
+
+    Array.from(uniqueReportNames).forEach((name, i) => {
+      formData.append(`Entries[${index}].ReportTypes[${i}]`, name);
+    });
+
+    patient.files.forEach((fileObj, fileIndex) => {
+      formData.append(
+        `Entries[${index}].ReportFiles`,
+        fileObj.file,
+        fileObj.file.name
+      );
+    });
+  });
+
+  return formData;
+};
+
+
+
   const formik = useFormik<FormValues>({
   initialValues: {
     patients: forms,
   },
-  validationSchema,
- onSubmit: async (values) => {
-  setIsSubmitting(true);
-  setSubmitError(null);
-  setSubmitSuccess(false);
-
-  try {
-    const allPayloads: ApiPayload[] = [];
-
-    for (const patient of values.patients) {
-      const base64Files: string[] = [];
-
-      for (const fileObj of patient.files) {
-        const fileBase64 = await toBase64(fileObj.file);
-        base64Files.push(fileBase64 as string);
-      }
-
-      const selectedReportType = reportTypes.find(
-        (type) => type.Id.toString() === patient.currentReportType
-      );
-
-      if (!selectedReportType) {
-        throw new Error(`Invalid report type ID: ${patient.currentReportType}`);
-      }
-
-      const payload: ApiPayload = {
-        hfid: patient.hfId,
-        email: patient.email,
-        name: patient.patientName,
-        reportType: selectedReportType.Name,
-        reportFiles: base64Files,
-      };
-
-      console.log("Sending payload:", JSON.stringify(payload, null, 2)); // ✅ debug log
-
-      allPayloads.push(payload);
+validationSchema,
+      onSubmit: async (values,actions) => {
+    try {
+      console.log("Submitted Data:", values.patients);
+      const apiPayload = transformPayload(values.patients);
+      const response = await AddLabUserReport(apiPayload);
+      toast.success("Data added succesfully..")
+      setSubmitSuccess(true);
+    setSubmitError(null);
+     actions.resetForm();
+    } catch (error) {
+      console.error("Failed to submit lab user report:", error);
+        setSubmitError("Failed to submit reports. Please try again.");
+    setSubmitSuccess(false);
     }
-
-    for (const payload of allPayloads) {
-      await AddLabUserReport(payload);
-    }
-
-    setSubmitSuccess(true);
-    setForms([
-      {
-        hfId: "",
-        email: "",
-        patientName: "",
-        currentReportType: "",
-        files: [],
-      },
-    ]);
-    formik.resetForm();
-  } catch (error: any) {
-    console.error("Error submitting reports:", error);
-    setSubmitError("Failed to submit one or more reports.");
-  } finally {
-    setIsSubmitting(false);
-  }
-},
-
-
-  enableReinitialize: true,
-});
-const toBase64 = (file: File): Promise<string | ArrayBuffer | null> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
+  },
+    enableReinitialize: true,
   });
-
 
 
   const addForm = () => {
@@ -481,6 +462,7 @@ const toBase64 = (file: File): Promise<string | ArrayBuffer | null> =>
       </button>
     </div>
   </div>
+  <ToastContainer />
 </form>
     </DefaultLayout>
   );

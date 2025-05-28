@@ -1,4 +1,5 @@
 "use client";
+import { SidebarData } from "@/services/labServiceApi";
 import {
   faArrowLeft,
   faArrowRight,
@@ -11,10 +12,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useState, useEffect } from "react";
 
+
+type LabInfo = {
+  hfid: number;
+  labName: string;
+};
+
 const Sidebar = ({ className = "" }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
+  const emailId =localStorage.getItem('emailId');
+  const [labName, setLabName] = useState<LabInfo[]>([]) as any;
 
   // Handle responsive behavior
   useEffect(() => {
@@ -44,6 +53,15 @@ const Sidebar = ({ className = "" }) => {
     return pathname === path;
   };
 
+  const ListData = async () =>{
+ const res = await SidebarData(String(emailId));
+ setLabName(res.data)
+ }
+
+ useEffect(() =>{
+ListData();
+},[])
+
   return (
     <div
       className={`flex flex-col bg-gradient-to-b from-blue-200 to-blue-100 ${
@@ -67,7 +85,7 @@ const Sidebar = ({ className = "" }) => {
       <div className="flex justify-center py-3">
         {collapsed ? (
           <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md">
-            <span className="text-blue-600 font-bold text-xs">NS</span>
+            {/* <span className="text-blue-600 font-bold text-xs">NS</span> */}
           </div>
         ) : (
           <div className="w-40 flex flex-col items-center">
@@ -78,7 +96,7 @@ const Sidebar = ({ className = "" }) => {
                 className="w-full h-full object-cover"
               />
             </div>
-            <span className="text-blue-600 font-bold text-lg">NorthStar</span>
+            <span className="text-blue-600 font-bold text-lg">{labName.labName}</span>
           </div>
         )}
       </div>
@@ -90,10 +108,10 @@ const Sidebar = ({ className = "" }) => {
         } bg-gradient-to-r from-blue-300 to-white`}
       >
         <span className="text-black">
-          {collapsed ? "ID" : "HF_id: HF120624RAN1097"}
+          {collapsed ? "ID" : `HF_Id: ${labName.hfid}`}
         </span>
       </div>
-
+ 
       {/* Main content with navigation and bottom image */}
       <div className="flex flex-col flex-grow">
         {/* Navigation Links */}
