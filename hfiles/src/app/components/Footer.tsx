@@ -1,48 +1,46 @@
 import { faWhatsapp } from "@fortawesome/free-brands-svg-icons";
-import {
-  faEnvelope,
-} from "@fortawesome/free-solid-svg-icons";
+import { faEnvelope } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import React from "react";
 
 const Footer = () => {
   return (
-    <footer className="fixed bottom-0 left-0 w-full z-40  text-white px-6 py-4" style={{ backgroundColor: '#0331B5' }}>
-      <div className="max-w-auto mx-auto flex flex-col md:flex-row justify-between items-center \-sm text-center md:text-left gap-3">
-        {/* Section 1: Legal */}
-        <div className="flex items-center space-x-2">
-          <a href="#" className="hover:underline">
+    <footer className="w-full text-white px-4 py-3 bg-[#0331B5]">
+      <div className="max-w-screen-xl mx-auto flex flex-col sm:flex-row sm:justify-between items-center text-center sm:text-left gap-3">
+        {/* Legal Section */}
+        <div className="flex flex-wrap justify-center sm:justify-start items-center space-x-2">
+          <a href="#" className="hover:underline text-sm">
             Terms & Conditions
           </a>
           <span className="mx-1">|</span>
-          <a href="#" className="hover:underline">
+          <a href="#" className="hover:underline text-sm">
             Privacy & Policy
           </a>
         </div>
 
-        {/* Section 2: Info */}
-        <div className="flex items-center space-x-2">
+        {/* Info Section */}
+        <div className="flex flex-wrap justify-center items-center space-x-2 text-sm">
           <a href="#" className="hover:underline">
             FAQ's
           </a>
           <span className="mx-1">|</span>
-          <p>Copyright@2025</p>
+          <p>© 2025 HFiles</p>
         </div>
 
-        {/* Section 3: Contact */}
-        <div className="flex items-center space-x-4">
+        {/* Contact Section */}
+        <div className="flex flex-wrap justify-center sm:justify-end items-center space-x-4 text-sm">
           <a
             href="https://wa.me/919978043453"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center space-x-1"
           >
-            <FontAwesomeIcon icon={faWhatsapp} className="mt-1" />
+            <FontAwesomeIcon icon={faWhatsapp} />
             <span>9978043453</span>
           </a>
           <span className="mx-1">|</span>
           <div className="flex items-center space-x-1">
-            <FontAwesomeIcon icon={faEnvelope} className="mt-1" />
+            <FontAwesomeIcon icon={faEnvelope} />
             <span>contact@hfiles.in</span>
           </div>
         </div>

@@ -34,7 +34,14 @@ const errorHandler = (error : any) => {
 
   switch (error?.response?.status) {
     case 401:
+       localStorage.removeItem("authToken");
+       localStorage.removeItem("userId");
+       localStorage.removeItem("emailId");
+       localStorage.removeItem("username");
+       localStorage.removeItem("LabAdminId");
+       window.location.href = "/labLogin";
     case 404:
+    toast.error("Resource not found");
     default:
       toast.error(errorMessage);
       break;

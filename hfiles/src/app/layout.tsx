@@ -28,6 +28,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <div id="global-loader" className="loader-overlay hidden">
+           <div className="loader"></div>
+        </div>
         {children}
       </body>
     </html>
