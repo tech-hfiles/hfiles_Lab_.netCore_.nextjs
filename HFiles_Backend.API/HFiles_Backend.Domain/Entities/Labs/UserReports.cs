@@ -29,7 +29,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
 
         [Column("UploadedBy")]
         public string? UploadedBy { get; set; }
-        public int LabId { get; set; }
+        public int? LabId { get; set; }
         public int? LabUserReportId { get; set; } 
 
     }

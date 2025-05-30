@@ -17,27 +17,28 @@ namespace HFiles_Backend.Domain.Entities.Labs
         [Required]
         public string? Email { get; set; }
 
+        public string? HFID { get; set; }
+
         [Required]
         public string? PhoneNumber { get; set; }
+
+        public string? Address { get; set; }
 
         [Required]
         public string? Pincode { get; set; }
 
+        public string? ProfilePhoto { get; set; }
+
         [Required]
         public string? PasswordHash { get; set; }
-        public string? HFID { get; set; }
-
-        [Required]
-        public long CreatedAtEpoch { get; set; }
-
-        public int LabReference { get; set; } = 0;
 
         public bool IsSuperAdmin { get; set; } = false;
 
+        public int LabReference { get; set; } = 0;
+
         public int DeletedBy { get; set; } = 0;
 
-        public string? ProfilePhoto { get; set; }
-
-        public string? Address { get; set; }
+        [Required]
+        public long CreatedAtEpoch { get; set; } 
     }
 }

@@ -19,10 +19,10 @@ namespace HFiles_Backend.Application.DTOs.Labs
         public string Password { get; set; } = null!;
 
         [Required(ErrorMessage = "LabId is required.")]
-        public int? UserId { get; set; }
+        public int UserId { get; set; }
 
         [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Invalid email format.")]
-        public string? Email { get; set; } 
+        public string Email { get; set; } = null!;
     }
 }

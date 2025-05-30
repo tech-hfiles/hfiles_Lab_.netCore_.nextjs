@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Newtonsoft.Json;
+using HFiles_Backend.API.Services;
+using System.Linq;
 
 
 namespace HFiles_Backend.API.Controllers.Labs
@@ -17,11 +19,13 @@ namespace HFiles_Backend.API.Controllers.Labs
     {
         private readonly AppDbContext _context;
         private readonly IWebHostEnvironment _env;
+        private readonly LabAuthorizationService _labAuthorizationService;
 
-        public LabUserReportController(AppDbContext context, IWebHostEnvironment env)
+        public LabUserReportController(AppDbContext context, IWebHostEnvironment env, LabAuthorizationService labAuthorizationService)
         {
             _context = context;
             _env = env;
+            _labAuthorizationService = labAuthorizationService;
         }
 
         private int GetReportTypeValue(string? reportType)
@@ -71,9 +75,10 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
-                return Unauthorized("Invalid or missing LabId (UserId) claim.");
-            }
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             Console.WriteLine("Logged-in LabId: " + labId);
 
@@ -226,9 +231,10 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
-                return Unauthorized("Invalid or missing LabId (UserId) claim.");
-            }
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             var currentLab = await _context.LabSignupUsers.FirstOrDefaultAsync(lsu => lsu.Id == labId);
             if (currentLab == null)
@@ -270,7 +276,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
 
             var userReports = await _context.UserReports
-                .Where(ur => ur.UserId == userId && relatedLabIds.Contains(ur.LabId) && ur.UploadedBy == "Lab")
+                .Where(ur => ur.UserId == userId && relatedLabIds.Contains(ur.LabId.Value) && ur.UploadedBy == "Lab")
                 .ToListAsync();
 
             var labUserReportsDict = await _context.LabUserReports
@@ -298,7 +304,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                     ? DateTimeOffset.FromUnixTimeSeconds(epochTime).UtcDateTime.ToString("dd-MM-yyyy")
                     : "";
 
-                string branchName = branchNamesDict.ContainsKey(branchId) ? branchNamesDict[branchId] : currentLab.LabName;
+                string branchName = branchNamesDict.ContainsKey(branchId)
+                                    ? branchNamesDict[branchId] ?? "Unknown Branch"
+                                    : currentLab.LabName ?? "Unknown Lab";
 
                 return new
                 {
@@ -333,14 +341,15 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         // Fetch All Distinct Users for All Dates (Currently we do not use this API in Frontend)
-        [HttpGet("LabReports/all")]
+        [HttpGet("labs/reports/all")]
         public async Task<IActionResult> GetLabUserReports()
         {
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
-                return Unauthorized("Invalid or missing LabId (UserId) claim.");
-            }
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             var latestReports = await _context.LabUserReports
                 .Where(lur => lur.LabId == labId)
@@ -396,6 +405,9 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpGet("labs/reports")]
         public async Task<IActionResult> GetLabUserReports([FromQuery] int labId, [FromQuery] string? startDate, [FromQuery] string? endDate)
         {
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
             if (labId <= 0)
                 return BadRequest("Invalid LabId.");
 
@@ -488,9 +500,10 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-            {
-                return Unauthorized("Invalid or missing LabId (UserId) claim.");
-            }
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             if (dto.Ids == null || dto.Ids.Count == 0)
                 return BadRequest("No LabUserReport IDs provided for resending.");
@@ -533,6 +546,267 @@ namespace HFiles_Backend.API.Controllers.Labs
                 Results = updatedReports
             });
         }
+
+
+
+
+
+        // Show Notifications for Reports of Past 24 hours
+        [HttpGet("labs/notifications")]
+        [Authorize]
+        public async Task<IActionResult> GetDailyLabNotifications([FromQuery] int labId)
+        {
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
+            var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+            if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                return Unauthorized("Invalid or missing LabAdminId claim.");
+
+            if (roleClaim == null)
+                return Unauthorized("Invalid or missing Role claim.");
+
+            string role = roleClaim.Value;
+            int? userId = null;
+
+            if (role == "Super Admin")
+            {
+                userId = await _context.LabAdmins
+                    .Where(a => a.Id == labAdminId)
+                    .Select(a => (int?)a.UserId)
+                    .FirstOrDefaultAsync();
+            }
+            else if (role == "Admin" || role == "Member")
+            {
+                userId = await _context.LabMembers
+                    .Where(m => m.LabId == labId && m.Id == labAdminId)
+                    .Select(m => (int?)m.UserId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (userId == null)
+                return Unauthorized("Invalid access for the given role.");
+
+            long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long epochThreshold = currentEpoch - 86400;
+
+            var recentReports = await _context.LabUserReports
+                .Where(r => r.LabId == labId && r.EpochTime >= epochThreshold)
+                .ToListAsync();
+
+            if (!recentReports.Any())
+                return NotFound("No recent reports found for this lab.");
+
+            var reportIds = recentReports.Select(r => r.Id).ToList();
+            var userReports = await _context.UserReports
+                .Where(ur => reportIds.Contains(ur.LabUserReportId.Value))
+                .ToListAsync();
+
+
+            var userIds = userReports.Select(ur => ur.UserId).Distinct().ToList();
+            var userDetailsDict = await _context.UserDetails
+                .Where(ud => userIds.Contains(ud.user_id))
+                .ToDictionaryAsync(ud => ud.user_id, ud => ud.user_firstname);
+
+            var labAdminUser = await _context.UserDetails
+                .Where(ud => ud.user_id == userId)
+                .Select(ud => ud.user_firstname)
+                .FirstOrDefaultAsync() ?? "Unknown Admin";
+
+            var notifications = userReports.Select(ur =>
+            {
+                var labReport = recentReports.FirstOrDefault(lr => lr.Id == ur.LabUserReportId);
+                return new
+                {
+                    ReportType = ReverseReportTypeMapping(ur.ReportId),
+                    SentTo = userDetailsDict.ContainsKey(ur.UserId) ? userDetailsDict[ur.UserId] : "Unknown User",
+                    SentBy = labAdminUser,
+                    ElapsedMinutes = labReport != null ? (currentEpoch - labReport.EpochTime) / 60 : 0
+                };
+            }).OrderBy(n => n.ElapsedMinutes).ToList();
+
+            return Ok(new
+            {
+                Message = "Notifications fetched successfully.",
+                Notifications = notifications
+            });
+        }
+
+
+
+
+
+        // Show Notifications for Reports of Past Week
+        [HttpGet("labs/notifications/week")]
+        [Authorize]
+        public async Task<IActionResult> GetWeeklyLabNotifications([FromQuery] int labId)
+        {
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
+            var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+            if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                return Unauthorized("Invalid or missing LabAdminId claim.");
+
+            if (roleClaim == null)
+                return Unauthorized("Invalid or missing Role claim.");
+
+            string role = roleClaim.Value;
+            int? userId = null;
+
+            if (role == "Super Admin")
+            {
+                userId = await _context.LabAdmins
+                    .Where(a => a.Id == labAdminId)
+                    .Select(a => (int?)a.UserId)
+                    .FirstOrDefaultAsync();
+            }
+            else if (role == "Admin" || role == "Member")
+            {
+                userId = await _context.LabMembers
+                    .Where(m => m.LabId == labId && m.Id == labAdminId)
+                    .Select(m => (int?)m.UserId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (userId == null)
+                return Unauthorized("Invalid access for the given role.");
+
+            long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long epochThreshold = currentEpoch - 604800;
+
+            var recentReports = await _context.LabUserReports
+                .Where(r => r.LabId == labId && r.EpochTime >= epochThreshold)
+                .ToListAsync();
+
+            if (!recentReports.Any())
+                return NotFound("No reports found in the last 7 days for this lab.");
+
+            var reportIds = recentReports.Select(r => r.Id).ToList();
+            var userReports = await _context.UserReports
+                .Where(ur => reportIds.Contains(ur.LabUserReportId.Value))
+                .ToListAsync();
+
+            var userIds = userReports.Select(ur => ur.UserId).Distinct().ToList();
+            var userDetailsDict = await _context.UserDetails
+                .Where(ud => userIds.Contains(ud.user_id))
+                .ToDictionaryAsync(ud => ud.user_id, ud => ud.user_firstname);
+
+            var labAdminUser = await _context.UserDetails
+                .Where(ud => ud.user_id == userId)
+                .Select(ud => ud.user_firstname)
+                .FirstOrDefaultAsync() ?? "Unknown Admin";
+
+            var notifications = userReports.Select(ur =>
+            {
+                var labReport = recentReports.FirstOrDefault(lr => lr.Id == ur.LabUserReportId);
+                return new
+                {
+                    ReportType = ReverseReportTypeMapping(ur.ReportId),
+                    SentTo = userDetailsDict.ContainsKey(ur.UserId) ? userDetailsDict[ur.UserId] : "Unknown User",
+                    SentBy = labAdminUser,
+                    ElapsedMinutes = labReport != null ? (currentEpoch - labReport.EpochTime) / 60 : 0
+                };
+            }).OrderBy(n => n.ElapsedMinutes).ToList();
+
+            return Ok(new
+            {
+                Message = "Weekly notifications fetched successfully.",
+                Notifications = notifications
+            });
+        }
+
+
+
+
+
+        // Show Notifications for Reports of Past Month
+        [HttpGet("labs/notifications/month")]
+        [Authorize]
+        public async Task<IActionResult> GetMonthlyLabNotifications([FromQuery] int labId)
+        {
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
+            var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+            if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                return Unauthorized("Invalid or missing LabAdminId claim.");
+
+            if (roleClaim == null)
+                return Unauthorized("Invalid or missing Role claim.");
+
+            string role = roleClaim.Value;
+            int? userId = null;
+
+            if (role == "Super Admin")
+            {
+                userId = await _context.LabAdmins
+                    .Where(a => a.Id == labAdminId)
+                    .Select(a => (int?)a.UserId)
+                    .FirstOrDefaultAsync();
+            }
+            else if (role == "Admin" || role == "Member")
+            {
+                userId = await _context.LabMembers
+                    .Where(m => m.LabId == labId && m.Id == labAdminId)
+                    .Select(m => (int?)m.UserId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (userId == null)
+                return Unauthorized("Invalid access for the given role.");
+
+            long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long epochThreshold = currentEpoch - (30 * 86400); 
+
+            var recentReports = await _context.LabUserReports
+                .Where(r => r.LabId == labId && r.EpochTime >= epochThreshold)
+                .ToListAsync();
+
+            if (!recentReports.Any())
+                return NotFound("No reports found in the last month for this lab.");
+
+            var reportIds = recentReports.Select(r => r.Id).ToList();
+            var userReports = await _context.UserReports
+                .Where(ur => reportIds.Contains(ur.LabUserReportId.Value))
+                .ToListAsync();
+
+            var userIds = userReports.Select(ur => ur.UserId).Distinct().ToList();
+            var userDetailsDict = await _context.UserDetails
+                .Where(ud => userIds.Contains(ud.user_id))
+                .ToDictionaryAsync(ud => ud.user_id, ud => ud.user_firstname);
+
+            var labAdminUser = await _context.UserDetails
+                .Where(ud => ud.user_id == userId)
+                .Select(ud => ud.user_firstname)
+                .FirstOrDefaultAsync() ?? "Unknown Admin";
+
+            var notifications = userReports
+                .Select(ur =>
+                {
+                    var labReport = recentReports.FirstOrDefault(lr => lr.Id == ur.LabUserReportId);
+                    return new
+                    {
+                        ReportType = ReverseReportTypeMapping(ur.ReportId),
+                        SentTo = userDetailsDict.ContainsKey(ur.UserId) ? userDetailsDict[ur.UserId] : "Unknown User",
+                        SentBy = labAdminUser,
+                        ElapsedMinutes = labReport != null ? (currentEpoch - labReport.EpochTime) / 60 : int.MaxValue
+                    };
+                }).OrderBy(n => n.ElapsedMinutes).ToList();
+
+            return Ok(new
+            {
+                Message = "Monthly notifications fetched successfully.",
+                Notifications = notifications
+            });
+        }
+
     }
 }
 

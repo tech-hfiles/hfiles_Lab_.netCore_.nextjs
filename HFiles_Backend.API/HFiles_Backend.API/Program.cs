@@ -51,6 +51,12 @@ builder.Configuration["Smtp:Username"] = Environment.GetEnvironmentVariable("SMT
 builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMTP_PASS");
 builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
 
+
+// Load .env and inject into Interakt Whatsapp Configuration
+builder.Configuration["Interakt:ApiUrl"] = Environment.GetEnvironmentVariable("INTERAKT_API_URL");
+builder.Configuration["Interakt:ApiKey"] = Environment.GetEnvironmentVariable("INTERAKT_API_KEY");
+
+
 // JWT Configuration
 var jwtSettings = new JwtSettings
 {
@@ -70,8 +76,6 @@ builder.Services.AddSession(options =>
     options.Cookie.SameSite = SameSiteMode.None;  
     options.Cookie.SecurePolicy = CookieSecurePolicy.None;  
 });
-
-
 
 // Add CORS policy for frontend
 builder.Services.AddCors(options =>
@@ -127,6 +131,10 @@ builder.Services.AddScoped<IPasswordHasher<LabMember>, PasswordHasher<LabMember>
 builder.Services.AddScoped<EmailService>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddScoped<JwtTokenService>();
+builder.Services.Configure<WhatsappSettings>(builder.Configuration.GetSection("Interakt"));
+builder.Services.AddHttpClient<IWhatsappService, WhatsappService>();
+builder.Services.AddScoped<LabAuthorizationService>();
+
 
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>

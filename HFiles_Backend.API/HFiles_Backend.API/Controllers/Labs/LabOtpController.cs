@@ -17,11 +17,13 @@ namespace HFiles_Backend.API.Controllers.Labs
     {
         private readonly AppDbContext _context;
         private readonly EmailService _emailService;
+        private readonly IWhatsappService _whatsappService;
 
-        public LabOtpController(AppDbContext context, EmailService emailService)
+        public LabOtpController(AppDbContext context, EmailService emailService, IWhatsappService whatsappService)
         {
             _context = context;
             _emailService = emailService;
+            _whatsappService = whatsappService;
         }
 
 
@@ -70,15 +72,16 @@ namespace HFiles_Backend.API.Controllers.Labs
             try
             {
                 await _emailService.SendEmailAsync(dto.Email, subject, body);
+                await _whatsappService.SendOtpAsync(otpEntry.OtpCode, dto.PhoneNumber);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error sending email: {ex.Message}");
+                return StatusCode(500, $"User created, but failed to send notification: {ex.Message}");
             }
 
             return Ok(new
             {
-                message = "OTP has been sent to your email.",
+                message = "OTP has been sent to your email and phonenumber.",
                 expiresInMinutes = 5
             });
         }

@@ -127,7 +127,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"User created, but failed to send emails: {ex.Message}");
+                return StatusCode(500, $"User created, but failed to send notification: {ex.Message}");
             }
 
             return Ok(new { message = "User registered successfully.", IsSuperAdmin = user.IsSuperAdmin });

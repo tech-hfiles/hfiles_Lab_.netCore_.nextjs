@@ -16,5 +16,9 @@ namespace HFiles_Backend.Application.DTOs.Labs
         [EmailAddress(ErrorMessage = "Invalid Email Address.")]
         public string Email { get; set; } = null!;
 
+        [Required(ErrorMessage = "Phone number is required.")]
+        [Phone(ErrorMessage = "Invalid phone number.")]
+        public string PhoneNumber { get; set; } = null!;
+
     }
 }

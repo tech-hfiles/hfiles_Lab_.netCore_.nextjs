@@ -7,6 +7,8 @@ using HFiles_Backend.Application.DTOs.Labs;
 using Microsoft.AspNetCore.Identity;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 
 namespace HFiles_Backend.Controllers
 {
@@ -17,7 +19,6 @@ namespace HFiles_Backend.Controllers
         private readonly AppDbContext _context;
         private readonly IPasswordHasher<LabAdmin> _passwordHasher;
         private readonly JwtTokenService _jwtTokenService;
-
         public LabAdminController(AppDbContext context, IPasswordHasher<LabAdmin> passwordHasher, JwtTokenService jwtTokenService)
         {
             _context = context;
@@ -126,11 +127,14 @@ namespace HFiles_Backend.Controllers
                 if (admin == null)
                     return Unauthorized($"The user with HFID: {dto.HFID} is not a Super Admin.");
 
+                if (admin.IsMain != 1)
+                    return Unauthorized($"User {username} with role Super Admin has no longer access to login.");
+
                 if (!_passwordHasher.VerifyHashedPassword(admin, admin.PasswordHash, dto.Password)
                     .Equals(PasswordVerificationResult.Success))
                     return Unauthorized("Invalid password.");
 
-                var token = _jwtTokenService.GenerateToken(dto.UserId.Value, dto.Email, admin.Id, dto.Role);
+                var token = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, admin.Id, dto.Role);
                 return Ok(new
                 {
                     Message = "Login successful.",
@@ -149,7 +153,7 @@ namespace HFiles_Backend.Controllers
                     .Equals(PasswordVerificationResult.Success))
                     return Unauthorized("Invalid password.");
 
-                var token = _jwtTokenService.GenerateToken(dto.UserId.Value, dto.Email, member.Id, dto.Role);
+                var token = _jwtTokenService.GenerateToken(dto.UserId, dto.Email, member.Id, dto.Role);
                 return Ok(new
                 {
                     Message = "Login successful.",
@@ -264,5 +268,69 @@ namespace HFiles_Backend.Controllers
                 Members = memberDtos
             });
         }
+
+
+
+
+
+        // Promotes Admin to Super Admin
+        [HttpPost("labs/admin/promote")]
+        [Authorize]
+        public async Task<IActionResult> PromoteLabMemberToSuperAdmin([FromBody] PromoteAdminDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            if (dto.MemberId <= 0)
+                return BadRequest("Valid MemberId is required.");
+
+            var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                return Unauthorized("Invalid or missing Super Admin Id in token.");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing labId in token.");
+
+            var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == dto.MemberId);
+            if (member == null)
+                return NotFound($"No lab member found with ID {dto.MemberId}.");
+
+            member.DeletedBy = labAdminId;
+            _context.LabMembers.Update(member);
+
+            var currentSuperAdmin = await _context.LabAdmins.FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == labId);
+
+            if (currentSuperAdmin == null)
+                return NotFound($"No active Super Admin found for Lab ID {labId}.");
+
+            if (currentSuperAdmin != null)
+            {
+                currentSuperAdmin.IsMain = 0; 
+                _context.LabAdmins.Update(currentSuperAdmin);
+            }
+
+            long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+            var newSuperAdmin = new LabAdmin
+            {
+                UserId = member.UserId,
+                LabId = member.LabId,
+                PasswordHash = member.PasswordHash,
+                EpochTime = epoch,
+                IsMain = 1
+            };
+
+            _context.LabAdmins.Add(newSuperAdmin);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Message = "Lab Admin promoted to Super Admin successfully.",
+                NewSuperAdminId = newSuperAdmin.Id,
+                OldSuperAdminId = currentSuperAdmin?.Id,
+                UpdatedDeletedBy = member.DeletedBy
+            });
+        }
+
     }
 }

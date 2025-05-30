@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Application.DTOs.Labs;
 using System.ComponentModel.DataAnnotations;
+using HFiles_Backend.API.Services;
 namespace HFiles_Backend.API.Controllers.Labs
 
 {
@@ -11,10 +12,12 @@ namespace HFiles_Backend.API.Controllers.Labs
     public class LabHFIDController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly LabAuthorizationService _labAuthorizationService;
 
-        public LabHFIDController(AppDbContext context)
+        public LabHFIDController(AppDbContext context, LabAuthorizationService labAuthorizationService)
         {
             _context = context;
+            _labAuthorizationService = labAuthorizationService;
         }
 
 
@@ -27,6 +30,13 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
+
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             var lab = await _context.LabSignupUsers
                 .Where(u => u.Email == email)
@@ -52,6 +62,13 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
+
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             var userDetails = await _context.UserDetails
                 .Where(u => u.user_membernumber == dto.HFID)

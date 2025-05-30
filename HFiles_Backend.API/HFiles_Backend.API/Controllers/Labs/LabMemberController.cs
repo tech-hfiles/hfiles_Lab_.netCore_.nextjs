@@ -6,6 +6,7 @@ using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Application.DTOs.Labs;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using HFiles_Backend.API.Services;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -15,11 +16,13 @@ namespace HFiles_Backend.API.Controllers.Labs
     {
         private readonly AppDbContext _context;
         private readonly IPasswordHasher<LabMember> _passwordHasher;
+        private readonly LabAuthorizationService _labAuthorizationService;
 
-        public LabMemberController(AppDbContext context, IPasswordHasher<LabMember> passwordHasher)
+        public LabMemberController(AppDbContext context, IPasswordHasher<LabMember> passwordHasher, LabAuthorizationService labAuthorizationService)
         {
             _context = context;
             _passwordHasher = passwordHasher;
+            _labAuthorizationService = labAuthorizationService;
         }
 
 
@@ -33,6 +36,13 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
+
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
 
             var userDetails = await _context.Set<UserDetails>()
                 .FirstOrDefaultAsync(u => u.user_membernumber == dto.HFID);
@@ -93,6 +103,13 @@ namespace HFiles_Backend.API.Controllers.Labs
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
             if (dto.Ids == null || !dto.Ids.Any())
                 return BadRequest("No member IDs provided for promotion.");
 
@@ -110,7 +127,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             foreach (var memberId in dto.Ids)
             {
-                var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == memberId);
+                var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == memberId && m.LabId == labId && m.DeletedBy == 0);
                 if (member == null)
                 {
                     promotionResults.Add(new PromoteMemberResultDto
@@ -164,10 +181,17 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpDelete("labs/members/{id}")]
         public async Task<IActionResult> DeleteLabMember(int id)
         {
-            var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == id);
+            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                return Unauthorized("Invalid or missing LabId claim.");
+
+            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+
+            var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == id && m.LabId == labId);
 
             if (member == null)
-                return NotFound("Lab member not found.");
+                return NotFound($"Lab member not found for this branch with the ID {id}");
 
             if (member.Role == "Admin")
                 return BadRequest("Admin cannot be deleted.");
