@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class PasswordResetRequestDto
+    public class PasswordResetRequest
     {
         [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Invalid email address.")]

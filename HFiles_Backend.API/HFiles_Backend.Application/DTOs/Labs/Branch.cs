@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class BranchDto
+    public class Branch
     {
         [Required(ErrorMessage = "Lab name is required.")]
         public string LabName { get; set; } = null!;

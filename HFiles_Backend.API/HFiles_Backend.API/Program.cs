@@ -14,70 +14,61 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load .env and inject into Configuration
+// Load .env file explicitly
 DotNetEnv.Env.Load();
 
-var connectionString = $"Server={Environment.GetEnvironmentVariable("DB_HOST")};" +
-                       $"Port={Environment.GetEnvironmentVariable("DB_PORT")};" +
-                       $"Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
-                       $"User={Environment.GetEnvironmentVariable("DB_USER")};" +
-                       $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};";
+// Bind environment variables into Configuration system
+builder.Configuration["ConnectionStrings:DefaultConnection"] = $"Server={Environment.GetEnvironmentVariable("DB_HOST")};" +
+                                                             $"Port={Environment.GetEnvironmentVariable("DB_PORT")};" +
+                                                             $"Database={Environment.GetEnvironmentVariable("DB_NAME")};" +
+                                                             $"User={Environment.GetEnvironmentVariable("DB_USER")};" +
+                                                             $"Password={Environment.GetEnvironmentVariable("DB_PASSWORD")};";
 
-Console.WriteLine("DB_HOST: " + Environment.GetEnvironmentVariable("DB_HOST"));
-Console.WriteLine("DB_PORT: " + Environment.GetEnvironmentVariable("DB_PORT"));
-Console.WriteLine("DB_NAME: " + Environment.GetEnvironmentVariable("DB_NAME"));
-Console.WriteLine("DB_USER: " + Environment.GetEnvironmentVariable("DB_USER"));
-Console.WriteLine("DB_PASSWORD: " + Environment.GetEnvironmentVariable("DB_PASSWORD"));
-
-try
-{
-    using (var connection = new MySqlConnection(connectionString))
-    {
-        connection.Open();
-        Console.WriteLine("✅ Database connection successful!");
-    }
-}
-catch (Exception ex)
-{
-    Console.WriteLine("❌ Connection failed: " + ex.Message);
-}
-
-builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
-
-// Load .env and inject into SMTP Configuration
 builder.Configuration["Smtp:Host"] = Environment.GetEnvironmentVariable("SMTP_HOST");
 builder.Configuration["Smtp:Port"] = Environment.GetEnvironmentVariable("SMTP_PORT");
 builder.Configuration["Smtp:Username"] = Environment.GetEnvironmentVariable("SMTP_USER");
 builder.Configuration["Smtp:Password"] = Environment.GetEnvironmentVariable("SMTP_PASS");
 builder.Configuration["Smtp:From"] = Environment.GetEnvironmentVariable("SMTP_FROM");
 
-
-// Load .env and inject into Interakt Whatsapp Configuration
 builder.Configuration["Interakt:ApiUrl"] = Environment.GetEnvironmentVariable("INTERAKT_API_URL");
 builder.Configuration["Interakt:ApiKey"] = Environment.GetEnvironmentVariable("INTERAKT_API_KEY");
 
+// Add JWT section to Configuration explicitly for binding
+builder.Configuration["JwtSettings:Key"] = Environment.GetEnvironmentVariable("JWT_KEY") ?? throw new Exception("JWT_KEY missing");
+builder.Configuration["JwtSettings:Issuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? throw new Exception("JWT_ISSUER missing");
+builder.Configuration["JwtSettings:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? throw new Exception("JWT_AUDIENCE missing");
+builder.Configuration["JwtSettings:DurationInMinutes"] = Environment.GetEnvironmentVariable("JWT_DURATION") ?? "30";
 
-// JWT Configuration
-var jwtSettings = new JwtSettings
+// Log loaded variables
+Console.WriteLine("DB Connection String: " + builder.Configuration.GetConnectionString("DefaultConnection"));
+Console.WriteLine("JWT Key Present: " + (!string.IsNullOrEmpty(builder.Configuration["JwtSettings:Key"])));
+
+try
 {
-    Key = Environment.GetEnvironmentVariable("JWT_KEY")!,
-    Issuer = Environment.GetEnvironmentVariable("JWT_ISSUER")!,
-    Audience = Environment.GetEnvironmentVariable("JWT_AUDIENCE")!,
-    DurationInMinutes = int.Parse(Environment.GetEnvironmentVariable("JWT_DURATION") ?? "30")
-};
+    using var connection = new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"));
+    connection.Open();
+    Console.WriteLine("✅ Database connection successful!");
+}
+catch (Exception ex)
+{
+    Console.WriteLine("❌ Connection failed: " + ex.Message);
+}
+
+// Bind JwtSettings from configuration
+builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
 
 // Enable session storage
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30);  
-    options.Cookie.HttpOnly = true;  
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.None;  
-    options.Cookie.SecurePolicy = CookieSecurePolicy.None;  
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.None;
 });
 
-// Add CORS policy for frontend
+// CORS policy
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -85,12 +76,11 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); 
+              .AllowCredentials();
     });
 });
 
-
-// Services
+// Services & Controllers
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -106,7 +96,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter your JWT token here like this: Bearer {your token}"
+        Description = "Enter your JWT token like this: Bearer {your token}"
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -114,27 +104,22 @@ builder.Services.AddSwaggerGen(options =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
             },
             Array.Empty<string>()
         }
     });
 });
 
+// Scoped services and JwtTokenService
 builder.Services.AddScoped<IPasswordHasher<LabSignupUser>, PasswordHasher<LabSignupUser>>();
 builder.Services.AddScoped<IPasswordHasher<LabAdmin>, PasswordHasher<LabAdmin>>();
 builder.Services.AddScoped<IPasswordHasher<LabMember>, PasswordHasher<LabMember>>();
 builder.Services.AddScoped<EmailService>();
-builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.Configure<WhatsappSettings>(builder.Configuration.GetSection("Interakt"));
 builder.Services.AddHttpClient<IWhatsappService, WhatsappService>();
 builder.Services.AddScoped<LabAuthorizationService>();
-
 
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -145,8 +130,17 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     )
 );
 
-// JWT Authentication
-var key = Encoding.ASCII.GetBytes(jwtSettings.Key);
+// Setup JWT Authentication
+// Get JwtSettings from DI 
+var tempJwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSettings>()
+                      ?? throw new Exception("Failed to load JwtSettings from configuration");
+
+if (string.IsNullOrEmpty(tempJwtSettings.Key))
+{
+    throw new Exception("JWT secret key (JwtSettings.Key) is missing or empty");
+}
+
+var key = Encoding.ASCII.GetBytes(tempJwtSettings.Key);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -161,15 +155,15 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings.Issuer,
-        ValidAudience = jwtSettings.Audience,
+        ValidIssuer = tempJwtSettings.Issuer,
+        ValidAudience = tempJwtSettings.Audience,
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
 });
 
 var app = builder.Build();
 
-// Migrations
+// Run migrations
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -179,11 +173,9 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
-        using (var connection = new MySqlConnector.MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection")))
-        {
-            connection.Open();
-            Console.WriteLine("✅ Migration connection successful!");
-        }
+        using var connection = new MySqlConnection(builder.Configuration.GetConnectionString("DefaultConnection"));
+        connection.Open();
+        Console.WriteLine("✅ Migration connection successful!");
     }
     catch (Exception ex)
     {
@@ -202,14 +194,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseSession(); 
+app.UseSession();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-
-
-// Serve static files
+// Static files
 app.UseStaticFiles();
 app.UseStaticFiles(new StaticFileOptions
 {

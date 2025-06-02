@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class PromoteMembersRequestDto
+    public class PromoteMembersRequest
     {
         [Required(ErrorMessage = "At least one member ID is required.")]
         public List<int> Ids { get; set; } = new();

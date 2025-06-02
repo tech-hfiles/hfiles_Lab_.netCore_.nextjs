@@ -7,9 +7,11 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class HFIDRequestDto
+    public class ApiResponse<T>
     {
-        [Required(ErrorMessage = "HFID is required.")]
-        public string HFID { get; set; } = null!;
+        public bool Success { get; set; }
+        public T? Data { get; set; }
+        public string? Message { get; set; }
     }
+
 }

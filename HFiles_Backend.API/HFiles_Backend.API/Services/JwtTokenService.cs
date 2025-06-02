@@ -1,39 +1,62 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using HFiles_Backend.API.Settings;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using ApiJwtSettings = HFiles_Backend.API.Settings.JwtSettings;
 
-public class JwtTokenService
+namespace HFiles_Backend.API.Services
 {
-    private readonly JwtSettings _jwtSettings;
-
-    public JwtTokenService(JwtSettings jwtSettings)
+    public class JwtTokenService
     {
-        _jwtSettings = jwtSettings;
-    }
+        private readonly ApiJwtSettings _jwtSettings;
 
-    public string GenerateToken(int userId, string email, int labAdminId, string role)
-    {
-        var claims = new List<Claim>
+        public JwtTokenService(IOptions<ApiJwtSettings> jwtOptions)
         {
-            new Claim(JwtRegisteredClaimNames.Sub, email),
-            new Claim("UserId", userId.ToString()),
-            new Claim("LabAdminId", labAdminId.ToString()),
-            new Claim("Role", role)
-        };
+            _jwtSettings = jwtOptions.Value ?? throw new ArgumentNullException(nameof(jwtOptions), "JWT settings cannot be null.");
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            if (string.IsNullOrWhiteSpace(_jwtSettings.Key))
+                throw new ArgumentException("JWT secret key is missing or empty in configuration.");
 
-        var token = new JwtSecurityToken(
-            issuer: _jwtSettings.Issuer,
-            audience: _jwtSettings.Audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_jwtSettings.DurationInMinutes),
-            signingCredentials: creds
-        );
+            if (string.IsNullOrWhiteSpace(_jwtSettings.Issuer))
+                throw new ArgumentException("JWT issuer is missing or empty in configuration.");
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+            if (string.IsNullOrWhiteSpace(_jwtSettings.Audience))
+                throw new ArgumentException("JWT audience is missing or empty in configuration.");
+
+            if (_jwtSettings.DurationInMinutes <= 0)
+                throw new ArgumentException("JWT duration must be a positive number.");
+        }
+
+        public string GenerateToken(int userId, string email, int labAdminId, string role)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("Email cannot be null or empty.", nameof(email));
+
+            if (string.IsNullOrWhiteSpace(role))
+                throw new ArgumentException("Role cannot be null or empty.", nameof(role));
+
+            var claims = new List<Claim>
+            {
+                new(JwtRegisteredClaimNames.Sub, email),
+                new("UserId", userId.ToString()),
+                new("LabAdminId", labAdminId.ToString()),
+                new("Role", role)
+            };
+
+            var keyBytes = Encoding.UTF8.GetBytes(_jwtSettings.Key!);
+            var key = new SymmetricSecurityKey(keyBytes);
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _jwtSettings.Issuer,
+                audience: _jwtSettings.Audience,
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(_jwtSettings.DurationInMinutes),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }

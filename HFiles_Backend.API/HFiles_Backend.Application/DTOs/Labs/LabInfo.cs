@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class LabInfoDto
+    public class LabInfo
     {
         public int LabId { get; set; }
         public string? LabName { get; set; }

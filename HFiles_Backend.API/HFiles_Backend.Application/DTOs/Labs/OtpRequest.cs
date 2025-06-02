@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class OtpRequestDto
+    public class OtpRequest
     {
         [Required(ErrorMessage = "LabName is required.")]
         public string LabName { get; set; } = null!;

@@ -7,20 +7,22 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class CreateMemberDto
+    public class UserLogin
     {
         [Required(ErrorMessage = "HFID is required.")]
         public string HFID { get; set; } = null!;
 
-        [Required(ErrorMessage = "BranchId is required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than zero.")]
-        public int BranchId { get; set; }
+        [Required(ErrorMessage = "Role is required.")]
+        public string Role { get; set; } = null!;
 
         [Required(ErrorMessage = "Password is required.")]
         public string Password { get; set; } = null!;
 
-        [Required(ErrorMessage = "Confirm Password is required.")]
-        [Compare("Password", ErrorMessage = "Passwords do not match.")]
-        public string ConfirmPassword { get; set; } = null!;
+        [Required(ErrorMessage = "LabId is required.")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Invalid email format.")]
+        public string Email { get; set; } = null!;
     }
 }

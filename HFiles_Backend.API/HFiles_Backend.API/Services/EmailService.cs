@@ -19,20 +19,26 @@ namespace HFiles_Backend.API.Services
         {
             try
             {
-                var host = _configuration["Smtp:Host"];
-                var port = int.Parse(_configuration["Smtp:Port"]);
-                var username = _configuration["Smtp:Username"];
-                var password = _configuration["Smtp:Password"];
-                var from = _configuration["Smtp:From"];
+                var host = _configuration["Smtp:Host"]
+                           ?? throw new InvalidOperationException("SMTP Host is not configured.");
+                var portStr = _configuration["Smtp:Port"]
+                              ?? throw new InvalidOperationException("SMTP Port is not configured.");
+                var username = _configuration["Smtp:Username"]
+                               ?? throw new InvalidOperationException("SMTP Username is not configured.");
+                var password = _configuration["Smtp:Password"]
+                               ?? throw new InvalidOperationException("SMTP Password is not configured.");
+                var from = _configuration["Smtp:From"]
+                           ?? throw new InvalidOperationException("SMTP From address is not configured.");
 
+                if (!int.TryParse(portStr, out int port))
+                    throw new InvalidOperationException("SMTP Port is not a valid integer.");
 
                 Console.WriteLine("Email Config:");
-                Console.WriteLine($"Host: {_configuration["Smtp:Host"]}");
-                Console.WriteLine($"Port: {_configuration["Smtp:Port"]}");
-                Console.WriteLine($"Username: {_configuration["Smtp:Username"]}");
-                Console.WriteLine($"Password: {_configuration["Smtp:Password"]}");
-                Console.WriteLine($"From: {_configuration["Smtp:From"]}");
-
+                Console.WriteLine($"Host: {host}");
+                Console.WriteLine($"Port: {port}");
+                Console.WriteLine($"Username: {username}");
+                Console.WriteLine($"Password: {password}");
+                Console.WriteLine($"From: {from}");
 
                 using var smtpClient = new SmtpClient(host)
                 {

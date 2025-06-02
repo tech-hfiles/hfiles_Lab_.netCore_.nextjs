@@ -6,6 +6,6 @@ namespace HFiles_Backend.API.DTOs.Labs
     {
         [Required(ErrorMessage = "At least one entry is required.")]
         [MinLength(1, ErrorMessage = "The Entries list cannot be empty.")]
-        public List<UserReportUploadDTO> Entries { get; set; } = new();
+        public List<UserReportUploadDTO> Entries { get; set; } = [];
     }
 }

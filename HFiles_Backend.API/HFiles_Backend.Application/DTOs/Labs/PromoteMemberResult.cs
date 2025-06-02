@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class PromoteMemberResultDto
+    public class PromoteMemberResult
     {
         public int Id { get; set; }
         public string Status { get; set; } = "Success";

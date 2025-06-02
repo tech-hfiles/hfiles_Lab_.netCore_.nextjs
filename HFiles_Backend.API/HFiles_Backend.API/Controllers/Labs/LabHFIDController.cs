@@ -4,21 +4,17 @@ using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Application.DTOs.Labs;
 using System.ComponentModel.DataAnnotations;
 using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
+using Microsoft.AspNetCore.Authorization;
 namespace HFiles_Backend.API.Controllers.Labs
 
 {
     [ApiController]
     [Route("api")]
-    public class LabHFIDController : ControllerBase
+    public class LabHFIDController(AppDbContext context, LabAuthorizationService labAuthorizationService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-        private readonly LabAuthorizationService _labAuthorizationService;
-
-        public LabHFIDController(AppDbContext context, LabAuthorizationService labAuthorizationService)
-        {
-            _context = context;
-            _labAuthorizationService = labAuthorizationService;
-        }
+        private readonly AppDbContext _context = context;
+        private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
 
 
 
@@ -28,28 +24,35 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpGet("labs/hfid")]
         public async Task<IActionResult> GetHFIDByEmail([FromQuery][Required] string email)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
 
-            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                return Unauthorized("Invalid or missing LabId claim.");
+                    return BadRequest(ApiResponseFactory.Fail(errors));
+                }
 
-            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
+                var lab = await _context.LabSignupUsers
+                    .Where(u => u.Email == email)
+                    .Select(u => new { u.Email, u.LabName, u.HFID })
+                    .FirstOrDefaultAsync();
 
-            var lab = await _context.LabSignupUsers
-                .Where(u => u.Email == email)
-                .Select(u => new { u.Email, u.LabName, u.HFID })
-                .FirstOrDefaultAsync();
+                if (lab == null)
+                    return NotFound(ApiResponseFactory.Fail($"Lab with email '{email}' not found."));
 
-            if (lab == null)
-                return NotFound("Lab not found.");
+                if (string.IsNullOrEmpty(lab.HFID))
+                    return NotFound(ApiResponseFactory.Fail("HFID has not been generated yet for this user."));
 
-            if (string.IsNullOrEmpty(lab.HFID))
-                return NotFound("HFID not generated yet for this user.");
-
-            return Ok(lab);
+                return Ok(ApiResponseFactory.Success(lab, "HFID retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
         }
 
 
@@ -58,33 +61,46 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Verify HFID for Users
         [HttpPost("users/hfid")]
-        public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequestDto dto)
+        [Authorize]
+        public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequest dto)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-            if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                return Unauthorized("Invalid or missing LabId claim.");
-
-            if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                return Unauthorized("Permission denied. You can only create/modify/delete data for your main lab or its branches.");
-
-            var userDetails = await _context.UserDetails
-                .Where(u => u.user_membernumber == dto.HFID)
-                .Select(u => new
+            try
+            {
+                if (!ModelState.IsValid)
                 {
-                    Username = $"{u.user_firstname} {u.user_lastname}",
-                    UserEmail = u.user_email
-                })
-                .FirstOrDefaultAsync();
+                    var errors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
 
-            if (userDetails == null)
-                return NotFound($"No user found with HFID {dto.HFID}.");
+                    return BadRequest(ApiResponseFactory.Fail(errors));
+                }
 
-            return Ok(userDetails);
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
+
+                var userDetails = await _context.UserDetails
+                    .Where(u => u.user_membernumber == dto.HFID)
+                    .Select(u => new
+                    {
+                        Username = $"{u.user_firstname} {u.user_lastname}",
+                        UserEmail = u.user_email
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (userDetails == null)
+                    return NotFound(ApiResponseFactory.Fail($"No user found with HFID '{dto.HFID}'"));
+
+                return Ok(ApiResponseFactory.Success(userDetails, "User details retrieved successfully."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
         }
-
-
     }
 }

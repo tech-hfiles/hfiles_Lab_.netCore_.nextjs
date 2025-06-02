@@ -20,7 +20,7 @@ namespace HFiles_Backend.API.DTOs.Labs
 
         [Required(ErrorMessage = "At least one report file is required.")]
         [MinLength(1, ErrorMessage = "At least one report file must be uploaded.")]
-        public List<IFormFile> ReportFiles { get; set; } = new();
+        public List<IFormFile> ReportFiles { get; set; } = [];
 
         [Required(ErrorMessage = "BranchId is required.")]
         public int BranchId { get; set; }

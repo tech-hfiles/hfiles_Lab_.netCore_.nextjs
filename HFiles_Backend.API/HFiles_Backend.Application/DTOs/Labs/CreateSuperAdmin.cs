@@ -7,8 +7,15 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class UserLoginDto
+    public class CreateSuperAdmin
     {
+        [Required(ErrorMessage = "User ID is required.")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Invalid email address format.")]
+        public string Email { get; set; } = null!;
+
         [Required(ErrorMessage = "HFID is required.")]
         public string HFID { get; set; } = null!;
 
@@ -18,11 +25,8 @@ namespace HFiles_Backend.Application.DTOs.Labs
         [Required(ErrorMessage = "Password is required.")]
         public string Password { get; set; } = null!;
 
-        [Required(ErrorMessage = "LabId is required.")]
-        public int UserId { get; set; }
-
-        [Required(ErrorMessage = "Email is required.")]
-        [EmailAddress(ErrorMessage = "Invalid email format.")]
-        public string Email { get; set; } = null!;
+        [Required(ErrorMessage = "Confirm Password is required.")]
+        [Compare("Password", ErrorMessage = "Passwords do not match.")]
+        public string ConfirmPassword { get; set; } = null!;
     }
 }

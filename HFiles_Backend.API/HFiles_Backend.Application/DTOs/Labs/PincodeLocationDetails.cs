@@ -6,17 +6,17 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class LocationDetailsResponseDto
+    public class LocationDetailsResponse
     {
         public string? Status { get; set; }
-        public List<PostOfficeDto>? PostOffice { get; set; }  // ✅ Matches API response
+        public List<PostOffice>? PostOffice { get; set; }  
     }
 
-    public class PostOfficeDto
+    public class PostOffice
     {
-        public string? Name { get; set; }  // ✅ Area
-        public string? District { get; set; }  // ✅ City
-        public string? State { get; set; }  // ✅ State
+        public string? Name { get; set; }
+        public string? District { get; set; }  
+        public string? State { get; set; }  
     }
 
 }

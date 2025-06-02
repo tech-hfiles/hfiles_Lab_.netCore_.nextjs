@@ -15,9 +15,10 @@ namespace HFiles_Backend.API.Services
 
         public WhatsappService(IConfiguration config, HttpClient httpClient)
         {
-            _apiUrl = config["Interakt:ApiUrl"];
-            _apiKey = config["Interakt:ApiKey"];
-            _httpClient = httpClient;
+            _apiUrl = config["Interakt:ApiUrl"] ?? throw new ArgumentNullException(nameof(config), "Interakt:ApiUrl configuration is missing.");
+            _apiKey = config["Interakt:ApiKey"] ?? throw new ArgumentNullException(nameof(config), "Interakt:ApiKey configuration is missing.");
+
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         }
 
         public async Task SendOtpAsync(string otp, string mobileNo)

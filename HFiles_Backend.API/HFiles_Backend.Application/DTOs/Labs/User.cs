@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class UserDto
+    public class User
     {
         public int MemberId { get; set; }
         public string HFID { get; set; } = string.Empty;
@@ -15,6 +15,6 @@ namespace HFiles_Backend.Application.DTOs.Labs
         public string Role { get; set; } = string.Empty;
         public string PromotedByName { get; set; } = "Not Promoted Yet";
         public string CreatedByName { get; set; } = "Unknown";
-        public string ProfilePhoto { get; set; } = string.Empty;
+        public string ProfilePhoto { get; set; } = "No image preview available";
     }
 }

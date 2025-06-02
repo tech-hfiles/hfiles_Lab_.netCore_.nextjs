@@ -7,20 +7,14 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class CreateSuperAdminDto
+    public class CreateMember
     {
-        [Required(ErrorMessage = "User ID is required.")]
-        public int UserId { get; set; }
-
-        [Required(ErrorMessage = "Email is required.")]
-        [EmailAddress(ErrorMessage = "Invalid email address format.")]
-        public string Email { get; set; } = null!;
-
         [Required(ErrorMessage = "HFID is required.")]
         public string HFID { get; set; } = null!;
 
-        [Required(ErrorMessage = "Role is required.")]
-        public string Role { get; set; } = null!;
+        [Required(ErrorMessage = "BranchId is required.")]
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than zero.")]
+        public int BranchId { get; set; }
 
         [Required(ErrorMessage = "Password is required.")]
         public string Password { get; set; } = null!;
