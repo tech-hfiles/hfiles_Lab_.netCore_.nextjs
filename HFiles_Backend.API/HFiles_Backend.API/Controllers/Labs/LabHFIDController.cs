@@ -61,7 +61,6 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Verify HFID for Users
         [HttpPost("users/hfid")]
-        [Authorize]
         public async Task<IActionResult> GetUserDetails([FromBody] HFIDRequest dto)
         {
             try
@@ -75,13 +74,6 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                     return BadRequest(ApiResponseFactory.Fail(errors));
                 }
-
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
-
-                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
 
                 var userDetails = await _context.UserDetails
                     .Where(u => u.user_membernumber == dto.HFID)

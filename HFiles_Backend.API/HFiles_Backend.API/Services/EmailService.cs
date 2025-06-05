@@ -1,73 +1,87 @@
-﻿using System.Net;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Net.Mail;
-using Microsoft.Extensions.Configuration;
+using System.Net;
 using System.Threading.Tasks;
-using System;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.API.Services
 {
-    public class EmailService
+    public class EmailService(IConfiguration configuration, ILogger<EmailService> logger)
     {
-        private readonly IConfiguration _configuration;
-
-        public EmailService(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
+        private readonly IConfiguration _configuration = configuration;
+        private readonly ILogger<EmailService> _logger = logger;
 
         public async Task SendEmailAsync(string toEmail, string subject, string body)
         {
+            await SendEmailWithAttachmentsAsync(toEmail, subject, body, new List<Attachment>());
+        }
+
+        public async Task SendEmailWithAttachmentsAsync(string toEmail, string subject, string body, List<Attachment> attachments)
+        {
             try
             {
-                var host = _configuration["Smtp:Host"]
-                           ?? throw new InvalidOperationException("SMTP Host is not configured.");
-                var portStr = _configuration["Smtp:Port"]
-                              ?? throw new InvalidOperationException("SMTP Port is not configured.");
-                var username = _configuration["Smtp:Username"]
+                var smtpHost = _configuration["Smtp:Host"]
+                               ?? throw new InvalidOperationException("SMTP Host is not configured.");
+                var smtpPortStr = _configuration["Smtp:Port"];
+                var smtpUser = _configuration["Smtp:Username"]
                                ?? throw new InvalidOperationException("SMTP Username is not configured.");
-                var password = _configuration["Smtp:Password"]
+                var smtpPass = _configuration["Smtp:Password"]
                                ?? throw new InvalidOperationException("SMTP Password is not configured.");
-                var from = _configuration["Smtp:From"]
-                           ?? throw new InvalidOperationException("SMTP From address is not configured.");
+                var fromEmail = _configuration["Smtp:From"]
+                                ?? throw new InvalidOperationException("SMTP From address is not configured.");
 
-                if (!int.TryParse(portStr, out int port))
-                    throw new InvalidOperationException("SMTP Port is not a valid integer.");
-
-                Console.WriteLine("Email Config:");
-                Console.WriteLine($"Host: {host}");
-                Console.WriteLine($"Port: {port}");
-                Console.WriteLine($"Username: {username}");
-                Console.WriteLine($"Password: {password}");
-                Console.WriteLine($"From: {from}");
-
-                using var smtpClient = new SmtpClient(host)
-                {
-                    Port = port,
-                    Credentials = new NetworkCredential(username, password),
-                    EnableSsl = true,
-                };
+                if (string.IsNullOrWhiteSpace(smtpPortStr) || !int.TryParse(smtpPortStr, out int smtpPort))
+                    throw new InvalidOperationException("SMTP Port is either missing or not a valid integer.");
 
                 using var mailMessage = new MailMessage
                 {
-                    From = new MailAddress(from),
+                    From = new MailAddress(fromEmail),
                     Subject = subject,
                     Body = body,
-                    IsBodyHtml = true,
+                    IsBodyHtml = true
                 };
 
                 mailMessage.To.Add(toEmail);
 
-                Console.WriteLine($"Sending email to: {toEmail}");
+                foreach (var attachment in attachments)
+                {
+                    mailMessage.Attachments.Add(attachment);
+                }
+
+                using var smtpClient = new SmtpClient(smtpHost, smtpPort)
+                {
+                    Credentials = new NetworkCredential(smtpUser, smtpPass),
+                    EnableSsl = true,
+                    Timeout = 60000
+                };
+
+                _logger.LogInformation("Sending email to {Email} with {AttachmentCount} attachments.", toEmail, attachments.Count);
 
                 await smtpClient.SendMailAsync(mailMessage);
 
-                Console.WriteLine("✅ Email sent successfully!");
+                _logger.LogInformation("Email successfully sent to {Email}.", toEmail);
+            }
+            catch (SmtpException smtpEx)
+            {
+                _logger.LogError(smtpEx, "SMTP error while sending email to {Email}. StatusCode: {StatusCode}", toEmail, smtpEx.StatusCode);
+                throw new Exception("SMTP failure. Please check credentials or server settings.", smtpEx);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("❌ FULL ERROR LOG:");
-                Console.WriteLine(ex.ToString());
-                throw new Exception("Failed to send email via SMTP.", ex);
+                _logger.LogError(ex, "Unexpected error while sending email to {Email}.", toEmail);
+                throw new Exception("An unexpected error occurred while sending email.", ex);
+            }
+            finally
+            {
+                foreach (var attachment in attachments)
+                {
+                    attachment.Dispose();
+                }
+
+                _logger.LogInformation("Email process cleanup completed.");
             }
         }
     }

@@ -57,16 +57,26 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (labEntry == null)
                     return NotFound(ApiResponseFactory.Fail($"No lab found with Branch ID {dto.BranchId}."));
 
+                int mainLabId = labEntry.LabReference == 0 ? labId : labEntry.LabReference;
+
                 var createdByClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
                 if (createdByClaim == null || !int.TryParse(createdByClaim.Value, out int createdBy))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabAdminId in token."));
 
                 var existingMember = await _context.LabMembers
-                    .FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.BranchId);
+                    .FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && (m.LabId == dto.BranchId || m.LabId == labEntry.LabReference || m.LabId == mainLabId));  
                 if (existingMember != null)
                 {
                     string fullName = $"{userDetails.user_firstname} {userDetails.user_lastname}";
-                    return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as {existingMember.Role} in Branch {dto.BranchId}."));
+                    return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as {existingMember.Role} in Branch {existingMember.LabId}."));
+                }
+
+                var superAdmin = await _context.LabAdmins
+                    .FirstOrDefaultAsync(a => a.UserId == userDetails.user_id && a.IsMain == 1&& a.LabId == labId);
+
+                if (superAdmin != null)
+                {
+                    return BadRequest(ApiResponseFactory.Fail("User is already a registered Super Admin."));
                 }
 
                 var newMember = new LabMember

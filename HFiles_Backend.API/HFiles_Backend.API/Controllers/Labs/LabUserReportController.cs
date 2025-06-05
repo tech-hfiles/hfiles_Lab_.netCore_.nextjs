@@ -10,6 +10,7 @@ using HFiles_Backend.API.Services;
 using System.Linq;
 using System.Globalization;
 using HFiles_Backend.Application.Common;
+using System.Net.Mail;
 
 
 namespace HFiles_Backend.API.Controllers.Labs
@@ -17,12 +18,20 @@ namespace HFiles_Backend.API.Controllers.Labs
     [Route("api/")]
     [ApiController]
     [Authorize]
-    public class LabUserReportController(AppDbContext context, IWebHostEnvironment env, LabAuthorizationService labAuthorizationService) : ControllerBase
+    public class LabUserReportController(
+    AppDbContext context,
+    IWebHostEnvironment env,
+    LabAuthorizationService labAuthorizationService,
+    EmailService emailService,
+    ILogger<LabUserReportController> logger) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly IWebHostEnvironment _env = env;
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
+        private readonly EmailService _emailService = emailService;
+        private readonly ILogger<LabUserReportController> _logger = logger;
 
+        // Method to Map Report Type
         private static int GetReportTypeValue(string? reportType)
         {
             return reportType?.ToLower() switch
@@ -39,6 +48,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             };
         }
 
+        // Method to Reverse Map the Report Type
         private static string ReverseReportTypeMapping(int reportTypeId)
         {
             return reportTypeId switch
@@ -58,10 +68,9 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
         // Upload single/batch lab reports of muliple users
         [HttpPost("labs/reports/upload")]
-        public async Task<IActionResult> UploadReports([FromForm] UserReportBatchUploadDTO dto)
+        public async Task<IActionResult> UploadReports([FromForm] UserReportBatchUpload dto)
         {
             if (!ModelState.IsValid)
             {
@@ -507,7 +516,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Resend Reports using LabUserReportID
         [HttpPost("labs/reports/resend")]
-        public async Task<IActionResult> ResendReport([FromBody] ResendReportDto dto)
+        public async Task<IActionResult> ResendReport([FromBody] ResendReport dto)
         {
             if (!ModelState.IsValid)
             {

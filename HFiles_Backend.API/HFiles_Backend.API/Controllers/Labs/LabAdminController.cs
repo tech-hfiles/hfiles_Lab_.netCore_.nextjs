@@ -50,9 +50,9 @@ namespace HFiles_Backend.Controllers
                 if (dto.UserId == 0 || string.IsNullOrEmpty(dto.Email))
                     return BadRequest(ApiResponseFactory.Fail("UserId and Email are required in the payload."));
 
-                var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.UserId);
+                var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
                 if (lab == null)
-                    return NotFound(ApiResponseFactory.Fail($"Lab with ID {dto.UserId} not found."));
+                    return NotFound(ApiResponseFactory.Fail("Invalid Credentials."));
 
                 if (lab.IsSuperAdmin)
                     return BadRequest(ApiResponseFactory.Fail($"A Super Admin already exists for the lab {lab.LabName}."));
@@ -137,14 +137,21 @@ namespace HFiles_Backend.Controllers
 
                 string username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
 
+                var labSignup = await _context.LabSignupUsers
+                        .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
+
+                if (labSignup == null)
+                    return NotFound(ApiResponseFactory.Fail($"Invalid Credentials."));
+
                 if (dto.Role == "Super Admin")
                 {
-                    var admin = await _context.LabAdmins.FirstOrDefaultAsync(a => a.UserId == userDetails.user_id);
+                    var admin = await _context.LabAdmins.FirstOrDefaultAsync(a =>
+                        a.UserId == userDetails.user_id &&
+                        (a.LabId == dto.UserId || a.LabId == labSignup.LabReference)
+                    );
+
                     if (admin == null)
                         return Unauthorized(ApiResponseFactory.Fail($"The user with HFID: {dto.HFID} is not a Super Admin."));
-
-                    if (admin.IsMain != 1)
-                        return Unauthorized(ApiResponseFactory.Fail($"User {username} with role Super Admin no longer has access."));
 
                     if (string.IsNullOrEmpty(admin.PasswordHash))
                         return Unauthorized(ApiResponseFactory.Fail($"Password is not set for Super Admin: {username}"));
@@ -164,7 +171,7 @@ namespace HFiles_Backend.Controllers
                 }
                 else if (dto.Role == "Admin" || dto.Role == "Member")
                 {
-                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id);
+                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId);
                     if (member == null)
                         return Unauthorized(ApiResponseFactory.Fail($"{dto.Role} not found. Please register first."));
 
@@ -182,7 +189,7 @@ namespace HFiles_Backend.Controllers
                         Token = token
                     };
 
-                    return Ok(ApiResponseFactory.Success(response, $"{dto.Role} successfully logged in."));
+                    return Ok(ApiResponseFactory.Success(response, $"{member.Role} successfully logged in."));
                 }
 
                 return BadRequest(ApiResponseFactory.Fail("Invalid role specified."));

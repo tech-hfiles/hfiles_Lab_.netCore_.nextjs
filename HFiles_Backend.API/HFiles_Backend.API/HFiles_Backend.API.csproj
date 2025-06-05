@@ -8,6 +8,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="DotNetEnv" Version="3.1.1" />
+		<PackageReference Include="itext7" Version="9.2.0" />
+		<PackageReference Include="itext7.bouncy-castle-adapter" Version="9.2.0" />
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="7.0.2" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="7.0.2" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="7.0.2">
@@ -19,6 +21,8 @@
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 
 		<PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="7.0.0" />
+
+		<PackageReference Include="SharpZipLib" Version="1.4.2" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
 	</ItemGroup>
 
@@ -26,6 +30,11 @@
 		<ProjectReference Include="..\HFiles_Backend.Application\HFiles_Backend.Application.csproj" />
 		<ProjectReference Include="..\HFiles_Backend.Domain\HFiles_Backend.Domain.csproj" />
 		<ProjectReference Include="..\HFiles_Backend.Infrastructure\HFiles_Backend.Infrastructure.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="wwwroot\" />
+	  <Folder Include="wwwroot\uploads\" />
 	</ItemGroup>
 
 </Project>

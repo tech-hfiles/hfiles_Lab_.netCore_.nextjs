@@ -2,7 +2,7 @@
 
 namespace HFiles_Backend.API.DTOs.Labs
 {
-    public class UserReportUploadDTO
+    public class UserReportUpload
     {
         [Required(ErrorMessage = "HFID is required.")]
         public string HFID { get; set; } = null!;

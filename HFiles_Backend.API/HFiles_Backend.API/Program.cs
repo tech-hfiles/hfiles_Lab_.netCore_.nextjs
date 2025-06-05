@@ -121,6 +121,7 @@ builder.Services.Configure<WhatsappSettings>(builder.Configuration.GetSection("I
 builder.Services.AddHttpClient<IWhatsappService, WhatsappService>();
 builder.Services.AddScoped<LabAuthorizationService>();
 
+
 // DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
