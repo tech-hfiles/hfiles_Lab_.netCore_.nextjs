@@ -112,8 +112,8 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // Scoped services and JwtTokenService
-builder.Services.AddScoped<IPasswordHasher<LabSignupUser>, PasswordHasher<LabSignupUser>>();
-builder.Services.AddScoped<IPasswordHasher<LabAdmin>, PasswordHasher<LabAdmin>>();
+builder.Services.AddScoped<IPasswordHasher<LabSignup>, PasswordHasher<LabSignup>>();
+builder.Services.AddScoped<IPasswordHasher<LabSuperAdmin>, PasswordHasher<LabSuperAdmin>>();
 builder.Services.AddScoped<IPasswordHasher<LabMember>, PasswordHasher<LabMember>>();
 builder.Services.AddScoped<EmailService>();
 builder.Services.AddScoped<JwtTokenService>();

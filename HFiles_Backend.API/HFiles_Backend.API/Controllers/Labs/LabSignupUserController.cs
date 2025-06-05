@@ -16,11 +16,11 @@ namespace HFiles_Backend.API.Controllers.Labs
     [Route("api/")]
     public class LabSignupUserController(
         AppDbContext context,
-        IPasswordHasher<LabSignupUser> passwordHasher,
+        IPasswordHasher<LabSignup> passwordHasher,
         EmailService emailService) : ControllerBase
     {
         private readonly AppDbContext _context = context;
-        private readonly IPasswordHasher<LabSignupUser> _passwordHasher = passwordHasher;
+        private readonly IPasswordHasher<LabSignup> _passwordHasher = passwordHasher;
         private readonly EmailService _emailService = emailService;
 
 
@@ -43,7 +43,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             try
             {
 
-                if (await _context.LabSignupUsers.AnyAsync(u => u.Email == dto.Email))
+                if (await _context.LabSignups.AnyAsync(u => u.Email == dto.Email))
                     return BadRequest(ApiResponseFactory.Fail("Email already registered."));
 
                 var otpEntry = await _context.LabOtpEntries
@@ -68,7 +68,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var randomDigits = new Random().Next(1000, 9999);
                 var hfid = $"{HFIDPrefix}{last6Epoch}{labPrefix}{randomDigits}";
 
-                var user = new LabSignupUser
+                var user = new LabSignup
                 {
                     LabName = dto.LabName,
                     Email = dto.Email,
@@ -81,7 +81,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
-                _context.LabSignupUsers.Add(user);
+                _context.LabSignups.Add(user);
                 _context.LabOtpEntries.Remove(otpEntry);
 
           
@@ -155,7 +155,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var user = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.Id);
+                var user = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id);
                 if (user == null)
                     return NotFound(ApiResponseFactory.Fail($"Lab user with ID {dto.Id} not found."));
 
@@ -181,7 +181,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     user.ProfilePhoto = fileName;
                 }
 
-                _context.LabSignupUsers.Update(user);
+                _context.LabSignups.Update(user);
                 await _context.SaveChangesAsync();
 
                 return Ok(ApiResponseFactory.Success(new

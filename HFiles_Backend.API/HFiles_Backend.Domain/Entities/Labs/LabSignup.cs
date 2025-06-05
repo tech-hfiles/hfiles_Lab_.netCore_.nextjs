@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
-    public class LabSignupUser
+    public class LabSignup
     {
         public int Id { get; set; }
 

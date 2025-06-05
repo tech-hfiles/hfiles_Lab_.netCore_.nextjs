@@ -15,11 +15,11 @@ namespace HFiles_Backend.API.Controllers.Labs
     public class LabLoginController(
         AppDbContext context,
         EmailService emailService,
-        IPasswordHasher<LabSignupUser> passwordHasher) : ControllerBase
+        IPasswordHasher<LabSignup> passwordHasher) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly EmailService _emailService = emailService;
-        private readonly IPasswordHasher<LabSignupUser> _passwordHasher = passwordHasher;
+        private readonly IPasswordHasher<LabSignup> _passwordHasher = passwordHasher;
         private const int OtpValidityMinutes = 5;
 
 
@@ -42,7 +42,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
                 if (user == null)
                     return BadRequest(ApiResponseFactory.Fail("Email not registered."));
 
@@ -102,7 +102,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
                 if (user == null)
                     return BadRequest(ApiResponseFactory.Fail("Email not registered."));
 
@@ -151,7 +151,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var user = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Email == dto.Email);
+                var user = await _context.LabSignups.FirstOrDefaultAsync(u => u.Email == dto.Email);
                 if (user == null)
                     return BadRequest(ApiResponseFactory.Fail("Email not registered."));
 

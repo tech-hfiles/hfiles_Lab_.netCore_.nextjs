@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
-    public class LabAdmin
+    public class LabSuperAdmin
     {
         [Key]
         public int Id { get; set; }

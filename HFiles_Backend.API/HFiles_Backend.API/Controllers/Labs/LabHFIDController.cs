@@ -36,7 +36,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail(errors));
                 }
 
-                var lab = await _context.LabSignupUsers
+                var lab = await _context.LabSignups
                     .Where(u => u.Email == email)
                     .Select(u => new { u.Email, u.LabName, u.HFID })
                     .FirstOrDefaultAsync();

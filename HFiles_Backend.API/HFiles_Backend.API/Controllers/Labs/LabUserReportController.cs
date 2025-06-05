@@ -236,7 +236,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
 
-                var currentLab = await _context.LabSignupUsers.FirstOrDefaultAsync(lsu => lsu.Id == labId);
+                var currentLab = await _context.LabSignups.FirstOrDefaultAsync(lsu => lsu.Id == labId);
                 if (currentLab == null)
                     return NotFound(ApiResponseFactory.Fail($"LabId {labId} not found."));
 
@@ -260,7 +260,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 List<int> relatedLabIds;
                 if (currentLab.LabReference == 0)
                 {
-                    relatedLabIds = await _context.LabSignupUsers
+                    relatedLabIds = await _context.LabSignups
                         .Where(lsu => lsu.LabReference == labId)
                         .Select(lsu => lsu.Id)
                         .ToListAsync();
@@ -268,7 +268,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
                 else
                 {
-                    relatedLabIds = await _context.LabSignupUsers
+                    relatedLabIds = await _context.LabSignups
                         .Where(lsu => lsu.LabReference == currentLab.LabReference)
                         .Select(lsu => lsu.Id)
                         .ToListAsync();
@@ -291,7 +291,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var allBranchIds = labUserReportsDict.Values.Select(l => l.BranchId).Distinct().ToList();
 
-                var branchNamesDict = await _context.LabSignupUsers
+                var branchNamesDict = await _context.LabSignups
                     .Where(lsu => allBranchIds.Contains(lsu.Id))
                     .ToDictionaryAsync(lsu => lsu.Id, lsu => lsu.LabName);
 
@@ -624,7 +624,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 if (role == "Super Admin")
                 {
-                    userId = await _context.LabAdmins
+                    userId = await _context.LabSuperAdmins
                         .Where(a => a.Id == labAdminId)
                         .Select(a => (int?)a.UserId)
                         .FirstOrDefaultAsync();

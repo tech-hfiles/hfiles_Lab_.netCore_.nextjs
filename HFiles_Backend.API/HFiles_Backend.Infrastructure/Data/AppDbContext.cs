@@ -8,7 +8,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public AppDbContext(DbContextOptions<AppDbContext> options)
             : base(options) { }
 
-        public DbSet<LabSignupUser> LabSignupUsers { get; set; }
+        public DbSet<LabSignup> LabSignups { get; set; }
         public DbSet<LabOtpEntry> LabOtpEntries { get; set; }
 
         
@@ -16,7 +16,7 @@ namespace HFiles_Backend.Infrastructure.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<LabSignupUser>()
+            modelBuilder.Entity<LabSignup>()
                 .HasIndex(u => u.HFID)
                 .IsUnique();
 
@@ -26,7 +26,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<UserReports> UserReports { get; set; }
         public DbSet<UserDetails> UserDetails { get; set; }
         public DbSet<LabUserReports> LabUserReports { get; set; }
-        public DbSet<LabAdmin> LabAdmins { get; set; }
+        public DbSet<LabSuperAdmin> LabSuperAdmins { get; set; }
         public DbSet<LabMember> LabMembers { get; set; }
         
 

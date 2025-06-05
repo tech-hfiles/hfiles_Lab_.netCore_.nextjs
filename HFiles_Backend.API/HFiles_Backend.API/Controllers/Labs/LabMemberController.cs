@@ -52,7 +52,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (userDetails == null)
                     return NotFound(ApiResponseFactory.Fail($"No user found with HFID {dto.HFID}."));
 
-                var labEntry = await _context.LabSignupUsers
+                var labEntry = await _context.LabSignups
                     .FirstOrDefaultAsync(l => l.Id == dto.BranchId);
                 if (labEntry == null)
                     return NotFound(ApiResponseFactory.Fail($"No lab found with Branch ID {dto.BranchId}."));
@@ -71,7 +71,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail($"{fullName}'s HFID {dto.HFID} already exists as {existingMember.Role} in Branch {existingMember.LabId}."));
                 }
 
-                var superAdmin = await _context.LabAdmins
+                var superAdmin = await _context.LabSuperAdmins
                     .FirstOrDefaultAsync(a => a.UserId == userDetails.user_id && a.IsMain == 1&& a.LabId == labId);
 
                 if (superAdmin != null)

@@ -15,10 +15,10 @@ namespace HFiles_Backend.Controllers
 {
     [ApiController]
     [Route("api/")]
-    public class LabAdminController(AppDbContext context, IPasswordHasher<LabAdmin> passwordHasher, JwtTokenService jwtTokenService) : ControllerBase
+    public class LabAdminController(AppDbContext context, IPasswordHasher<LabSuperAdmin> passwordHasher, JwtTokenService jwtTokenService) : ControllerBase
     {
         private readonly AppDbContext _context = context;
-        private readonly IPasswordHasher<LabAdmin> _passwordHasher = passwordHasher;
+        private readonly IPasswordHasher<LabSuperAdmin> _passwordHasher = passwordHasher;
         private readonly JwtTokenService _jwtTokenService = jwtTokenService;
 
         public static class UserRoles
@@ -50,7 +50,7 @@ namespace HFiles_Backend.Controllers
                 if (dto.UserId == 0 || string.IsNullOrEmpty(dto.Email))
                     return BadRequest(ApiResponseFactory.Fail("UserId and Email are required in the payload."));
 
-                var lab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
+                var lab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
                 if (lab == null)
                     return NotFound(ApiResponseFactory.Fail("Invalid Credentials."));
 
@@ -59,7 +59,7 @@ namespace HFiles_Backend.Controllers
 
                 if (lab.LabReference != 0)
                 {
-                    var parentLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == lab.LabReference);
+                    var parentLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == lab.LabReference);
                     if (parentLab != null)
                         return BadRequest(ApiResponseFactory.Fail($"{lab.LabName} is a branch of {parentLab.LabName} and cannot create a Super Admin."));
                 }
@@ -69,16 +69,16 @@ namespace HFiles_Backend.Controllers
                 if (userDetails == null)
                     return NotFound(ApiResponseFactory.Fail($"No user found with HFID {dto.HFID}."));
 
-                var existingAdmin = await _context.LabAdmins
+                var existingAdmin = await _context.LabSuperAdmins
                     .FirstOrDefaultAsync(a => a.UserId == userDetails.user_id && a.IsMain == 1);
 
                 if (existingAdmin != null)
                 {
-                    var existingLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == existingAdmin.LabId);
+                    var existingLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == existingAdmin.LabId);
                     return BadRequest(ApiResponseFactory.Fail($"{userDetails.user_firstname} {userDetails.user_lastname}'s HFID {dto.HFID} already exists as Super Admin under {existingLab?.LabName}."));
                 }
 
-                var newAdmin = new LabAdmin
+                var newAdmin = new LabSuperAdmin
                 {
                     UserId = userDetails.user_id,
                     LabId = dto.UserId,
@@ -87,9 +87,9 @@ namespace HFiles_Backend.Controllers
                     IsMain = 1
                 };
 
-                _context.LabAdmins.Add(newAdmin);
+                _context.LabSuperAdmins.Add(newAdmin);
                 lab.IsSuperAdmin = true;
-                _context.LabSignupUsers.Update(lab);
+                _context.LabSignups.Update(lab);
 
                 await _context.SaveChangesAsync();
 
@@ -137,7 +137,7 @@ namespace HFiles_Backend.Controllers
 
                 string username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
 
-                var labSignup = await _context.LabSignupUsers
+                var labSignup = await _context.LabSignups
                         .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
 
                 if (labSignup == null)
@@ -145,7 +145,7 @@ namespace HFiles_Backend.Controllers
 
                 if (dto.Role == "Super Admin")
                 {
-                    var admin = await _context.LabAdmins.FirstOrDefaultAsync(a =>
+                    var admin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a =>
                         a.UserId == userDetails.user_id &&
                         (a.LabId == dto.UserId || a.LabId == labSignup.LabReference)
                     );
@@ -210,13 +210,13 @@ namespace HFiles_Backend.Controllers
         {
             try
             {
-                var labEntry = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
+                var labEntry = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
                 if (labEntry == null)
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
 
                 int mainLabId = labEntry.LabReference == 0 ? labId : labEntry.LabReference;
 
-                var superAdmin = await (from a in _context.LabAdmins
+                var superAdmin = await (from a in _context.LabSuperAdmins
                                         join u in _context.UserDetails on a.UserId equals u.user_id
                                         where a.LabId == mainLabId && a.IsMain == 1
                                         select new User
@@ -245,7 +245,7 @@ namespace HFiles_Backend.Controllers
                                              ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
                                          }).ToListAsync();
 
-                var labAdmins = await _context.LabAdmins
+                var labAdmins = await _context.LabSuperAdmins
                     .Where(a => a.LabId == labId)
                     .ToDictionaryAsync(a => a.Id);
 
@@ -349,17 +349,17 @@ namespace HFiles_Backend.Controllers
                 member.DeletedBy = labAdminId;
                 _context.LabMembers.Update(member);
 
-                var currentSuperAdmin = await _context.LabAdmins
+                var currentSuperAdmin = await _context.LabSuperAdmins
                     .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == labId);
 
                 if (currentSuperAdmin == null)
                     return NotFound(ApiResponseFactory.Fail($"No active Super Admin found for Lab ID {labId}."));
 
                 currentSuperAdmin.IsMain = 0;
-                _context.LabAdmins.Update(currentSuperAdmin);
+                _context.LabSuperAdmins.Update(currentSuperAdmin);
 
                 long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var newSuperAdmin = new LabAdmin
+                var newSuperAdmin = new LabSuperAdmin
                 {
                     UserId = member.UserId,
                     LabId = member.LabId,
@@ -367,7 +367,7 @@ namespace HFiles_Backend.Controllers
                     EpochTime = epoch,
                     IsMain = 1
                 };
-                _context.LabAdmins.Add(newSuperAdmin);
+                _context.LabSuperAdmins.Add(newSuperAdmin);
 
                 await _context.SaveChangesAsync();
 

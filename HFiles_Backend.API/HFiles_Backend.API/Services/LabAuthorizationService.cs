@@ -20,12 +20,12 @@ namespace HFiles_Backend.API.Services
             if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int userLabId))
                 return false;
 
-            var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == userLabId);
+            var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == userLabId);
             if (loggedInLab == null) return false;
 
             int mainLabId = loggedInLab.LabReference == 0 ? userLabId : loggedInLab.LabReference;
 
-            var branchIds = await _context.LabSignupUsers
+            var branchIds = await _context.LabSignups
                 .Where(l => l.LabReference == mainLabId)
                 .Select(l => l.Id)
                 .ToListAsync();

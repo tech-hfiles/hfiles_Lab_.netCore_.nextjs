@@ -14,12 +14,12 @@ namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
     [Route("api/")]
-    public class LabResetPasswordController(AppDbContext context, EmailService emailService, IPasswordHasher<LabSignupUser> passwordHasher, IPasswordHasher<LabAdmin> passwordHasher1, IPasswordHasher<LabMember> passwordHasher2) : ControllerBase
+    public class LabResetPasswordController(AppDbContext context, EmailService emailService, IPasswordHasher<LabSignup> passwordHasher, IPasswordHasher<LabSuperAdmin> passwordHasher1, IPasswordHasher<LabMember> passwordHasher2) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly EmailService _emailService = emailService;
-        private readonly IPasswordHasher<LabSignupUser> _passwordHasher = passwordHasher;
-        private readonly IPasswordHasher<LabAdmin> _passwordHasher1 = passwordHasher1;
+        private readonly IPasswordHasher<LabSignup> _passwordHasher = passwordHasher;
+        private readonly IPasswordHasher<LabSuperAdmin> _passwordHasher1 = passwordHasher1;
         private readonly IPasswordHasher<LabMember> _passwordHasher2 = passwordHasher2;
 
 
@@ -41,7 +41,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var labUser = await _context.LabSignupUsers
+                var labUser = await _context.LabSignups
                     .FirstOrDefaultAsync(l => l.Email == dto.Email);
 
                 if (labUser == null)
@@ -52,7 +52,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var mainLab = labUser.LabReference == 0
                     ? labUser
-                    : await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labUser.LabReference);
+                    : await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labUser.LabReference);
 
                 if (mainLab == null || string.IsNullOrWhiteSpace(mainLab.Email))
                     return StatusCode(500, ApiResponseFactory.Fail("Main lab email is missing."));
@@ -116,7 +116,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var labUser = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Email == dto.Email);
+                var labUser = await _context.LabSignups.FirstOrDefaultAsync(l => l.Email == dto.Email);
                 if (labUser == null)
                     return NotFound(ApiResponseFactory.Fail("No lab user found with this email."));
 
@@ -167,7 +167,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 string? recipientEmail = null;
                 string? userRole = null;
 
-                var superAdmin = await _context.LabAdmins
+                var superAdmin = await _context.LabSuperAdmins
                     .FirstOrDefaultAsync(a => a.UserId == userId && a.IsMain == 1 && a.LabId == dto.LabId);
 
                 if (superAdmin != null)
@@ -190,7 +190,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (recipientEmail == null)
                     return NotFound(ApiResponseFactory.Fail("No matching user found for password reset."));
 
-                var lab = await _context.LabSignupUsers
+                var lab = await _context.LabSignups
                     .FirstOrDefaultAsync(lsu => lsu.Id == superAdmin!.LabId);
 
                 string resetLink = "https://hfiles.co.in/forgot-password";
@@ -255,7 +255,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 string? userRole = null;
                 string? existingPasswordHash = null;
 
-                var superAdmin = await _context.LabAdmins
+                var superAdmin = await _context.LabSuperAdmins
                     .FirstOrDefaultAsync(a => a.UserId == userId && a.IsMain == 1 && a.LabId == dto.LabId);
 
                 if (superAdmin != null)

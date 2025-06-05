@@ -87,11 +87,11 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 var parentLabId = labId;
 
-                bool emailExists = await _context.LabSignupUsers.AnyAsync(u => u.Email == dto.Email);
+                bool emailExists = await _context.LabSignups.AnyAsync(u => u.Email == dto.Email);
                 if (emailExists)
                     return BadRequest(ApiResponseFactory.Fail("Email already registered."));
 
-                var parentUser = await _context.LabSignupUsers.FirstOrDefaultAsync(u => u.Id == parentLabId);
+                var parentUser = await _context.LabSignups.FirstOrDefaultAsync(u => u.Id == parentLabId);
                 if (parentUser == null)
                     return Unauthorized(ApiResponseFactory.Fail("Parent lab not found."));
 
@@ -104,7 +104,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var randomDigits = new Random().Next(1000, 9999);
                 var hfid = $"HF{last6Epoch}{labPrefix}{randomDigits}";
 
-                var branchUser = new LabSignupUser
+                var branchUser = new LabSignup
                 {
                     LabName = dto.LabName,
                     Email = dto.Email,
@@ -116,7 +116,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     LabReference = parentLabId
                 };
 
-                _context.LabSignupUsers.Add(branchUser);
+                _context.LabSignups.Add(branchUser);
                 await _context.SaveChangesAsync();
 
                 var response = new
@@ -151,17 +151,17 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
 
-                var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
                 if (loggedInLab == null)
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-                var mainLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == mainLabId && l.DeletedBy == 0);
+                var mainLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == mainLabId && l.DeletedBy == 0);
                 if (mainLab == null)
                     return NotFound(ApiResponseFactory.Fail($"Main lab with ID {mainLabId} not found."));
 
-                var branches = await _context.LabSignupUsers
+                var branches = await _context.LabSignups
                     .Where(l => l.LabReference == mainLabId && l.DeletedBy == 0)
                     .ToListAsync();
 
@@ -223,13 +223,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (!await _labAuthorizationService.IsLabAuthorized(branchId, User))
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
 
-                var loggedInLab = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == labId);
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
                 if (loggedInLab == null)
                     return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
 
                 int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
 
-                var branch = await _context.LabSignupUsers.FirstOrDefaultAsync(l => l.Id == branchId);
+                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == branchId);
                 if (branch == null)
                     return NotFound(ApiResponseFactory.Fail($"Branch with ID {branchId} not found."));
 
