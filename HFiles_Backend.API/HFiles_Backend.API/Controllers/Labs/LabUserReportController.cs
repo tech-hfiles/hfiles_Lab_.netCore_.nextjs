@@ -225,7 +225,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 		// Fetch All Reports of Selected User
 		[HttpGet("labs/reports/{userId}")]
-		public async Task<IActionResult> GetLabUserReportsByUserId(int userId)
+		public async Task<IActionResult> GetLabUserReportsByUserId([FromRoute]int userId, [FromQuery] string? reportType)
 		{
 			try
 			{
@@ -339,13 +339,16 @@ namespace HFiles_Backend.API.Controllers.Labs
 						filename = userReport.ReportName,
 						fileURL = userReport.ReportUrl,
 						labName = currentLab.LabName,
-						branchName,
+                        reportType = ReverseReportTypeMapping(userReport.ReportId),
+                        branchName,
 						epochTime,
 						createdDate,
 						LabUserReportId = labUserReportId,
 						resendDate
 					};
-				}).ToList();
+				})
+                .Where(report => string.IsNullOrEmpty(reportType) || report.reportType == reportType)
+                .ToList();
 
 
 				return Ok(ApiResponseFactory.Success(new
