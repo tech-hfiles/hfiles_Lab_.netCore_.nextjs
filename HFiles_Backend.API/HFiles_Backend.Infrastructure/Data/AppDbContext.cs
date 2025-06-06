@@ -28,8 +28,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabUserReports> LabUserReports { get; set; }
         public DbSet<LabSuperAdmin> LabSuperAdmins { get; set; }
         public DbSet<LabMember> LabMembers { get; set; }
-        
-
+        public DbSet<LabResendReports> LabResendReports { get; set; }
 
     }
 }

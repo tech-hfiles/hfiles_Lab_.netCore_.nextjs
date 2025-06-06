@@ -120,6 +120,7 @@ builder.Services.AddScoped<JwtTokenService>();
 builder.Services.Configure<WhatsappSettings>(builder.Configuration.GetSection("Interakt"));
 builder.Services.AddHttpClient<IWhatsappService, WhatsappService>();
 builder.Services.AddScoped<LabAuthorizationService>();
+builder.Services.AddScoped<LocationService>();
 
 
 // DbContext

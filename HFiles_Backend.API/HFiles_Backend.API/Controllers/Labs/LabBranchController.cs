@@ -8,56 +8,21 @@ using HFiles_Backend.Infrastructure.Data;
 using Newtonsoft.Json;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
+using System.Net.Http;
+using Org.BouncyCastle.Bcpg.Sig;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
     [ApiController]
     [Route("api/")]
-    public class LabBranchController(AppDbContext context, LabAuthorizationService labAuthorizationService) : ControllerBase
+    public class LabBranchController(AppDbContext context, LabAuthorizationService labAuthorizationService, HttpClient httpClient, LocationService locationService) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
+        private readonly HttpClient _httpClient = httpClient;
+        private readonly LocationService _locationService = locationService;
 
-        // Method to fetch Area, City & State Based on Pincode
-        private static async Task<string> GetLocationDetails(string? pincode)
-        {
-            if (string.IsNullOrWhiteSpace(pincode))
-                return "Invalid pincode";
-
-            using var httpClient = new HttpClient();
-            try
-            {
-                var response = await httpClient.GetAsync($"https://api.postalpincode.in/pincode/{pincode}");
-
-                if (!response.IsSuccessStatusCode)
-                    return $"Failed to fetch location details (Status Code: {response.StatusCode})";
-
-                var jsonResponse = await response.Content.ReadAsStringAsync();
-
-                var postalData = JsonConvert.DeserializeObject<List<LocationDetailsResponse>>(jsonResponse);
-
-                if (postalData == null || postalData.Count == 0 || postalData[0].Status != "Success")
-                    return $"Location not found for pincode {pincode}";
-
-                var postOfficeList = postalData[0].PostOffice;
-
-                if (postOfficeList == null || !postOfficeList.Any())
-                    return "Location not found";
-
-                var locationDetails = postOfficeList.FirstOrDefault();
-
-                return locationDetails != null
-                    ? $"{locationDetails.Name}, {locationDetails.District}, {locationDetails.State}"
-                    : "Location not found";
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error fetching location details: {ex.Message}");
-                return "Error retrieving location data";
-            }
-        }
-
-
+        
 
 
 
@@ -174,7 +139,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         Email = mainLab.Email ?? "No email available",
                         PhoneNumber = mainLab.PhoneNumber ?? "No phone number available",
                         Pincode = mainLab.Pincode ?? "No pincode available",
-                        Location = await GetLocationDetails(mainLab.Pincode),
+                        Location = await _locationService.GetLocationDetails(mainLab.Pincode),
                         Address = mainLab.Address ?? "No address available",
                         ProfilePhoto = mainLab.ProfilePhoto ?? "No image preview available",
                         LabType = "mainLab"
@@ -189,7 +154,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     Email = branch.Email ?? "No email available",
                     PhoneNumber = branch.PhoneNumber ?? "No phone number available",
                     Pincode = branch.Pincode ?? "No pincode available",
-                    Location = await GetLocationDetails(branch.Pincode),
+                    Location = await _locationService.GetLocationDetails(branch.Pincode),
                     Address = branch.Address ?? "No address available",
                     ProfilePhoto = branch.ProfilePhoto ?? "No image preview available",
                     LabType = "branch"
@@ -258,6 +223,20 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
+        }
+
+
+
+
+
+        // Method to fetch Area, City & State Based on Pincode
+        [HttpGet("labs/branches/{pincode}")]
+        [Authorize]
+        public async Task<IActionResult> GetLocation(string pincode)
+        {
+            var location = await _locationService.GetLocationDetails(pincode);
+
+            return Ok(new { success = true, location });
         }
     }
 }
