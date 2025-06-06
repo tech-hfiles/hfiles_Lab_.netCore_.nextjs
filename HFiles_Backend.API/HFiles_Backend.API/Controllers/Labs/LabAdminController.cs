@@ -353,14 +353,13 @@ namespace HFiles_Backend.Controllers
                     .Select(l => l.Id)
                     .ToListAsync();
 
-                branchIds.Add(mainLabId); // ✅ Ensure main lab is included in branch validation
+                branchIds.Add(mainLabId); 
 
-                // ✅ Updated: Only allow promotion if the member belongs to a valid branch
                 var member = await _context.LabMembers
                  .FirstOrDefaultAsync(m =>
                      m.Id == dto.MemberId &&
                      m.DeletedBy == 0 &&
-                     (branchIds.Contains(m.LabId) || m.LabId == mainLabId)); // ✅ Includes both branches and main lab
+                     (branchIds.Contains(m.LabId) || m.LabId == mainLabId));
 
                 if (member == null)
                     return NotFound(ApiResponseFactory.Fail($"No lab member found or not eligible for promotion."));
@@ -369,7 +368,7 @@ namespace HFiles_Backend.Controllers
                 _context.LabMembers.Update(member);
 
                 var currentSuperAdmin = await _context.LabSuperAdmins
-                    .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == mainLabId); // ✅ Updated: Use mainLabId for filtering
+                    .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == mainLabId); 
 
                 if (currentSuperAdmin == null)
                     return NotFound(ApiResponseFactory.Fail($"No active Super Admin found."));
@@ -378,11 +377,11 @@ namespace HFiles_Backend.Controllers
                 _context.LabSuperAdmins.Update(currentSuperAdmin);
 
                 long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var existedSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.UserId == member.UserId && a.LabId == mainLabId && a.IsMain == 0); // ✅ Updated: Assign superadmins under mainLabId
+                var existedSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.UserId == member.UserId && a.LabId == mainLabId && a.IsMain == 0); 
                 var existedMember = await _context.LabMembers
                     .FirstOrDefaultAsync(m =>
                         m.UserId == currentSuperAdmin.UserId &&
-                        (branchIds.Contains(m.LabId) || m.LabId == currentSuperAdmin.LabId) && // ✅ Ensures filtering includes branch labs
+                        (branchIds.Contains(m.LabId) || m.LabId == currentSuperAdmin.LabId) && 
                         m.DeletedBy != 0);
 
                 LabSuperAdmin? newSuperAdmin = null;
@@ -402,7 +401,7 @@ namespace HFiles_Backend.Controllers
                     newSuperAdmin = new LabSuperAdmin
                     {
                         UserId = member.UserId,
-                        LabId = mainLabId, // ✅ Assign under mainLabId
+                        LabId = mainLabId, 
                         PasswordHash = member.PasswordHash,
                         EpochTime = epoch,
                         IsMain = 1
@@ -458,6 +457,5 @@ namespace HFiles_Backend.Controllers
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
-
     }
 }
