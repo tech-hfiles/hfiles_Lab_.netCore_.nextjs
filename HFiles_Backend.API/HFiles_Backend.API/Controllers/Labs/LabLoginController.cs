@@ -7,6 +7,7 @@ using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.DTOs.Labs;
 using System.Threading.Tasks;
 using HFiles_Backend.Application.Common;
+using System.Security.Cryptography;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -46,7 +47,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (user == null)
                     return BadRequest(ApiResponseFactory.Fail("Email not registered."));
 
-                var otp = new Random().Next(100000, 999999).ToString();
+                var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
 
                 var otpEntry = new LabOtpEntry
                 {

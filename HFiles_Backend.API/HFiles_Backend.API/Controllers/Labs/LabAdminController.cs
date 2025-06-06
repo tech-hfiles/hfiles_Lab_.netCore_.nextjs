@@ -10,6 +10,7 @@ using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using HFiles_Backend.Application.Common;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace HFiles_Backend.Controllers
 {
@@ -342,48 +343,121 @@ namespace HFiles_Backend.Controllers
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing labId in token."));
 
-                var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == dto.MemberId);
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                if (loggedInLab == null) return BadRequest(ApiResponseFactory.Fail("Lab not found"));
+
+                int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
+
+                var branchIds = await _context.LabSignups
+                    .Where(l => l.LabReference == mainLabId)
+                    .Select(l => l.Id)
+                    .ToListAsync();
+
+                branchIds.Add(mainLabId); // ✅ Ensure main lab is included in branch validation
+
+                // ✅ Updated: Only allow promotion if the member belongs to a valid branch
+                var member = await _context.LabMembers
+                 .FirstOrDefaultAsync(m =>
+                     m.Id == dto.MemberId &&
+                     m.DeletedBy == 0 &&
+                     (branchIds.Contains(m.LabId) || m.LabId == mainLabId)); // ✅ Includes both branches and main lab
+
                 if (member == null)
-                    return NotFound(ApiResponseFactory.Fail($"No lab member found with ID {dto.MemberId}."));
+                    return NotFound(ApiResponseFactory.Fail($"No lab member found or not eligible for promotion."));
 
                 member.DeletedBy = labAdminId;
                 _context.LabMembers.Update(member);
 
                 var currentSuperAdmin = await _context.LabSuperAdmins
-                    .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == labId);
+                    .FirstOrDefaultAsync(a => a.IsMain == 1 && a.LabId == mainLabId); // ✅ Updated: Use mainLabId for filtering
 
                 if (currentSuperAdmin == null)
-                    return NotFound(ApiResponseFactory.Fail($"No active Super Admin found for Lab ID {labId}."));
+                    return NotFound(ApiResponseFactory.Fail($"No active Super Admin found."));
 
                 currentSuperAdmin.IsMain = 0;
                 _context.LabSuperAdmins.Update(currentSuperAdmin);
 
                 long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var newSuperAdmin = new LabSuperAdmin
+                var existedSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.UserId == member.UserId && a.LabId == mainLabId && a.IsMain == 0); // ✅ Updated: Assign superadmins under mainLabId
+                var existedMember = await _context.LabMembers
+                    .FirstOrDefaultAsync(m =>
+                        m.UserId == currentSuperAdmin.UserId &&
+                        (branchIds.Contains(m.LabId) || m.LabId == currentSuperAdmin.LabId) && // ✅ Ensures filtering includes branch labs
+                        m.DeletedBy != 0);
+
+                LabSuperAdmin? newSuperAdmin = null;
+                LabMember? newLabMember = null;
+
+                if (existedSuperAdmin != null)
                 {
-                    UserId = member.UserId,
-                    LabId = member.LabId,
-                    PasswordHash = member.PasswordHash,
-                    EpochTime = epoch,
-                    IsMain = 1
-                };
-                _context.LabSuperAdmins.Add(newSuperAdmin);
+                    existedSuperAdmin.IsMain = 1;
+                    existedSuperAdmin.PasswordHash = member.PasswordHash;
+                    existedSuperAdmin.EpochTime = epoch;
+                    _context.LabSuperAdmins.Update(existedSuperAdmin);
+
+                    newSuperAdmin = existedSuperAdmin;
+                }
+                else
+                {
+                    newSuperAdmin = new LabSuperAdmin
+                    {
+                        UserId = member.UserId,
+                        LabId = mainLabId, // ✅ Assign under mainLabId
+                        PasswordHash = member.PasswordHash,
+                        EpochTime = epoch,
+                        IsMain = 1
+                    };
+
+                    _context.LabSuperAdmins.Add(newSuperAdmin);
+                }
+
+                if (existedMember != null)
+                {
+                    existedMember.LabId = loggedInLab.Id;
+                    existedMember.Role = "Admin";
+                    existedMember.DeletedBy = 0;
+                    existedMember.PromotedBy = newSuperAdmin.Id;
+                    existedMember.PasswordHash = currentSuperAdmin.PasswordHash;
+                    existedMember.EpochTime = epoch;
+                    _context.LabMembers.Update(existedMember);
+
+                    newLabMember = existedMember;
+                }
+                else
+                {
+                    newLabMember = new LabMember
+                    {
+                        UserId = currentSuperAdmin.UserId,
+                        LabId = loggedInLab.Id,
+                        Role = "Admin",
+                        PasswordHash = currentSuperAdmin.PasswordHash,
+                        CreatedBy = currentSuperAdmin.Id,
+                        DeletedBy = 0,
+                        PromotedBy = currentSuperAdmin.Id,
+                        EpochTime = epoch
+                    };
+
+                    _context.LabMembers.Add(newLabMember);
+                }
 
                 await _context.SaveChangesAsync();
 
                 var response = new
                 {
-                    NewSuperAdminId = newSuperAdmin.Id,
+                    NewSuperAdminId = newSuperAdmin?.Id,
                     OldSuperAdminId = currentSuperAdmin.Id,
+                    NewMemberId = newLabMember?.Id,
+                    OldMemberId = member.Id,
                     UpdatedDeletedBy = member.DeletedBy
                 };
 
-                return Ok(ApiResponseFactory.Success(response, "Admin promoted to Super Admin successfully."));
+                return Ok(ApiResponseFactory.Success(response, $"{member.Role} promoted to Super Admin successfully."));
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
+
     }
 }

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Application.Common;
+using System.Security.Cryptography;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -40,7 +41,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
-                var otp = new Random().Next(100000, 999999).ToString();
+                var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
                 var now = DateTime.UtcNow;
 
                 var expiredOtps = await _context.LabOtpEntries

@@ -143,7 +143,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         if (file == null || file.Length == 0)
                             continue;
 
-                        var fileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}-{DateTime.Now:MM-dd-yyyy-HH-mm-ss}{Path.GetExtension(file.FileName)}";
+                        var fileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{DateTime.Now:MM-dd-yyyy_HH-mm-ss}{Path.GetExtension(file.FileName)}";
                         var filePath = Path.Combine(uploadsFolder, fileName);
 
                         using (var stream = new FileStream(filePath, FileMode.Create))

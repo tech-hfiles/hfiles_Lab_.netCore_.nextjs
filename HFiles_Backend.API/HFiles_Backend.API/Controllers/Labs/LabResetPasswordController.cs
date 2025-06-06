@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using HFiles_Backend.Infrastructure.Data;
 using HFiles_Backend.Application.Common;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Cryptography;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -21,6 +22,7 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly IPasswordHasher<LabSignup> _passwordHasher = passwordHasher;
         private readonly IPasswordHasher<LabSuperAdmin> _passwordHasher1 = passwordHasher1;
         private readonly IPasswordHasher<LabMember> _passwordHasher2 = passwordHasher2;
+        private const int OtpValidityMinutes = 5;
 
 
 
@@ -57,6 +59,19 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (mainLab == null || string.IsNullOrWhiteSpace(mainLab.Email))
                     return StatusCode(500, ApiResponseFactory.Fail("Main lab email is missing."));
 
+                var labResetPasswordOtp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+
+                var otpEntry = new LabOtpEntry
+                {
+                    Email = dto.Email,
+                    OtpCode = labResetPasswordOtp,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiryTime = DateTime.UtcNow.AddMinutes(OtpValidityMinutes)
+                };
+
+                await _context.LabOtpEntries.AddAsync(otpEntry);
+                await _context.SaveChangesAsync();
+
                 string recipientEmail = mainLab.Email;
                 string resetLink = "https://hfiles.co.in/forgot-password";
 
@@ -64,6 +79,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                  <html>
                  <body style='font-family:Arial,sans-serif;'>
                      <p>Hello <strong>{labUser.LabName}</strong>,</p>
+                     <p>Your OTP for Lab Reset Password is:</p>
+                     <h2 style='color: #333;'>{labResetPasswordOtp}</h2>
+                     <p>This OTP is valid for <strong>{OtpValidityMinutes} minutes</strong>.</p>
                      <p>You have requested to reset your password for your lab account. Click the button below to proceed:</p>
                      <p>
                          <a href='{resetLink}' 
@@ -94,7 +112,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return StatusCode(500, ApiResponseFactory.Fail($"An error occurred while sending the reset link: {ex.Message}"));
             }
         }
-
 
 
 
@@ -193,11 +210,27 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var lab = await _context.LabSignups
                     .FirstOrDefaultAsync(lsu => lsu.Id == superAdmin!.LabId);
 
+                var userResetPasswordOtp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+
+                var otpEntry = new LabOtpEntry
+                {
+                    Email = dto.Email,
+                    OtpCode = userResetPasswordOtp,
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiryTime = DateTime.UtcNow.AddMinutes(OtpValidityMinutes)
+                };
+
+                await _context.LabOtpEntries.AddAsync(otpEntry);
+                await _context.SaveChangesAsync();
+
                 string resetLink = "https://hfiles.co.in/forgot-password";
                 string emailBody = $@"
                                     <html>
                                     <body style='font-family:Arial,sans-serif;'>
                                         <p>Hello <strong>{userDetails.user_firstname}</strong>,</p>
+                                        <p>Your OTP for Reset Password is:</p>
+                                        <h2 style='color: #333;'>{userResetPasswordOtp}</h2>
+                                        <p>This OTP is valid for <strong>{OtpValidityMinutes} minutes</strong>.</p>
                                         <p>You have requested to reset your password for {lab!.LabName}. Click the button below to proceed:</p>
                                         <p>
                                             <a href='{resetLink}' 

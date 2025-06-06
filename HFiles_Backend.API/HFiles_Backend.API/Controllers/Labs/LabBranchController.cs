@@ -21,8 +21,8 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
         private readonly HttpClient _httpClient = httpClient;
         private readonly LocationService _locationService = locationService;
-
         
+
 
 
 
