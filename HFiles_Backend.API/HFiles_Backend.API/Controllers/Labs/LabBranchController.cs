@@ -101,6 +101,44 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
+        // Verify Branch OTP
+        [HttpPost("labs/branches/verify/otp")]
+        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            try
+            {
+                var otpEntry = await _context.LabOtpEntries
+                    .Where(o => o.Email == dto.Email)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (otpEntry == null || otpEntry.ExpiryTime < DateTime.UtcNow)
+                    return BadRequest(ApiResponseFactory.Fail("OTP expired or not found."));
+
+                if (otpEntry.OtpCode != dto.Otp)
+                    return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
+
+                return Ok(ApiResponseFactory.Success("OTP succesfully verified."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
+        }
+
+
+
+
 
         // Get All Labs (Main Lab + All Branches)
         [HttpGet("labs")]
@@ -181,12 +219,27 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             try
             {
+                var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                var RoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+                if(RoleClaim!.Value == "Admin" || RoleClaim!.Value == "Member")
+                {
+                    return Unauthorized(ApiResponseFactory.Fail($"{RoleClaim.Value} has no permissions."));
+                }
+
+                if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Super Admin Id in token."));
+
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
 
                 if (!await _labAuthorizationService.IsLabAuthorized(branchId, User))
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+
+                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == labAdminId);
+                if(labSuperAdmin == null)
+                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
 
                 var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
                 if (loggedInLab == null)
@@ -207,14 +260,20 @@ namespace HFiles_Backend.API.Controllers.Labs
                 if (branch.DeletedBy != 0)
                     return BadRequest(ApiResponseFactory.Fail("This branch has already been deleted."));
 
-                branch.DeletedBy = labId;
+                branch.DeletedBy = labSuperAdmin.Id;
                 await _context.SaveChangesAsync();
+
+                var deletedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                if(deletedByUser == null)
+                    return BadRequest(ApiResponseFactory.Fail("No user found."));
+
+                var deletedByUserName = deletedByUser.user_firstname + " " + deletedByUser.user_lastname;
 
                 var response = new
                 {
                     BranchId = branch.Id,
                     BranchName = branch.LabName,
-                    DeletedBy = labId
+                    DeletedBy = deletedByUserName
                 };
 
                 return Ok(ApiResponseFactory.Success(response, $"Branch deleted successfully."));
@@ -237,6 +296,61 @@ namespace HFiles_Backend.API.Controllers.Labs
             var location = await _locationService.GetLocationDetails(pincode);
 
             return Ok(new { success = true, location });
+        }
+
+
+
+
+
+        // Get Deleted Branches
+        [HttpGet("labs/deleted-branches")]
+        [Authorize]
+        public async Task<IActionResult> GetDeletedBranches()
+        {
+            try
+            {
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                if (loggedInLab == null)
+                    return NotFound(ApiResponseFactory.Fail($"Lab with ID {labId} not found."));
+
+                int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
+
+                var deletedBranches = await _context.LabSignups
+                    .AsNoTracking()
+                    .Where(l => l.LabReference == mainLabId && l.DeletedBy != 0)
+                    .Select(l => new
+                    {
+                        l.Id,
+                        l.LabName,
+                        l.Email,
+                        l.HFID,
+                        l.ProfilePhoto,
+                        DeletedByUser = (from sa in _context.LabSuperAdmins
+                                         join ud in _context.UserDetails on sa.UserId equals ud.user_id
+                                         where sa.Id == l.DeletedBy 
+                                         select ud.user_firstname + " " + ud.user_lastname)
+                                        .FirstOrDefault(),
+                        DeletedByUserRole = "Super Admin"
+            })
+                    .ToListAsync();
+
+
+                if (!deletedBranches.Any())
+                    return NotFound(ApiResponseFactory.Fail($"No deleted branches found."));
+
+                return Ok(ApiResponseFactory.Success(deletedBranches, "Deleted branches fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
         }
     }
 }

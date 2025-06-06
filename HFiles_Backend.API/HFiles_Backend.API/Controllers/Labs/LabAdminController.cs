@@ -148,7 +148,7 @@ namespace HFiles_Backend.Controllers
                 {
                     var admin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a =>
                         a.UserId == userDetails.user_id &&
-                        (a.LabId == dto.UserId || a.LabId == labSignup.LabReference)
+                        (a.LabId == dto.UserId || a.LabId == labSignup.LabReference) && a.IsMain == 1
                     );
 
                     if (admin == null)
@@ -172,7 +172,7 @@ namespace HFiles_Backend.Controllers
                 }
                 else if (dto.Role == "Admin" || dto.Role == "Member")
                 {
-                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId);
+                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId && m.DeletedBy == 0);
                     if (member == null)
                         return Unauthorized(ApiResponseFactory.Fail($"{dto.Role} not found. Please register first."));
 
@@ -352,7 +352,7 @@ namespace HFiles_Backend.Controllers
                     .Where(l => l.LabReference == mainLabId)
                     .Select(l => l.Id)
                     .ToListAsync();
-
+                 
                 branchIds.Add(mainLabId); 
 
                 var member = await _context.LabMembers
