@@ -246,6 +246,8 @@ namespace HFiles_Backend.Controllers
                                              ProfilePhoto = string.IsNullOrEmpty(u.user_image) ? "No image preview available" : u.user_image
                                          }).ToListAsync();
 
+                var membersCounts = membersList.Count;
+
                 var labAdmins = await _context.LabSuperAdmins
                     .Where(a => a.LabId == labId)
                     .ToDictionaryAsync(a => a.Id);
@@ -301,6 +303,7 @@ namespace HFiles_Backend.Controllers
                 {
                     LabId = labId,
                     MainLabId = mainLabId,
+                    UserCounts = membersCounts + 1,
                     SuperAdmin = superAdmin,
                     Members = memberDtos
                 };

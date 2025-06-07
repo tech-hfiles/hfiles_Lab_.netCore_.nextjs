@@ -169,6 +169,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Where(l => l.LabReference == mainLabId && l.DeletedBy == 0)
                     .ToListAsync();
 
+                var branchesCounts = branches.Count;
+
                 var result = new List<LabInfo>
                 {
                     new() {
@@ -201,7 +203,13 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 result.AddRange(await Task.WhenAll(branchTasks));
 
-                return Ok(ApiResponseFactory.Success(result, "Lab branches fetched successfully."));
+                var response = new
+                {
+                    LabCounts = branchesCounts + 1,
+                    Labs = result
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Lab branches fetched successfully."));
             }
             catch (Exception ex)
             {
@@ -298,7 +306,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             return Ok(new { success = true, location });
         }
-
+  
 
 
 

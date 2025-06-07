@@ -11,6 +11,7 @@ using System.Linq;
 using System.Globalization;
 using HFiles_Backend.Application.Common;
 using System.Net.Mail;
+using Sprache;
 
 
 namespace HFiles_Backend.API.Controllers.Labs
@@ -363,21 +364,25 @@ namespace HFiles_Backend.API.Controllers.Labs
                 .Where(report => string.IsNullOrEmpty(reportType) || report.reportType == reportType)
                 .ToList();
 
+                var ReportCounts = responseData.Count;
 
-				return Ok(ApiResponseFactory.Success(new
-				{
-					UserDetails = new
-					{
-						UserId = userId,
-						HFID = userDetails.user_membernumber,
-						FullName = fullName,
-						Email = userDetails.user_email,
-						UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image,
+
+                return Ok(ApiResponseFactory.Success(new
+                {
+                    ReportCounts,
+
+                    UserDetails = new
+                    {
+                        UserId = userId,
+                        HFID = userDetails.user_membernumber,
+                        FullName = fullName,
+                        Email = userDetails.user_email,
+                        UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image,
                         FirstSentReportDate = firstSentDate,
                         LastSentReportDate = lastSentDate
                     },
-					Reports = responseData,
-                   
+                    Reports = responseData,
+
                 }, "Reports fetched successfully."));
 			}
 			catch (Exception ex)
@@ -495,6 +500,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                     startEpoch = new DateTimeOffset(yesterday).ToUnixTimeSeconds();
                     endEpoch = new DateTimeOffset(today.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
                 }
+                var allReports = await _context.LabUserReports
+                    .Where(lur => (lur.LabId == labId && lur.BranchId == 0) || lur.BranchId == labId)
+                    .GroupBy(lur => lur.UserId)
+                    .Select(g => g.OrderByDescending(r => r.EpochTime).First())
+                    .ToListAsync();
 
                 var filteredReports = await _context.LabUserReports
                     .Where(lur => (lur.LabId == labId && lur.BranchId == 0) || lur.BranchId == labId)
@@ -503,8 +513,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Select(g => g.OrderByDescending(r => r.EpochTime).First())
                     .ToListAsync();
 
+                var PatientReports = allReports.Count;
+
                 if (filteredReports.Count == 0)
-                    return NotFound(ApiResponseFactory.Fail($"No reports found for LabId {labId}"));
+                    return NotFound(ApiResponseFactory.Fail($"No reports found of past 48 hours."));
 
                 var userIds = filteredReports.Select(lr => lr.UserId).ToList();
 
@@ -533,7 +545,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         return null;
 
                     reportIdsDict.TryGetValue(report.UserId, out int reportId);
-
+ 
                     return new
                     {
                         report.Id,
@@ -545,7 +557,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
                 }).Where(x => x != null).ToList();
 
-                return Ok(ApiResponseFactory.Success(responseData, "Reports fetched successfully."));
+                var response = new
+                {
+                    PatientReports,
+                    responseData
+                };
+
+                return Ok(ApiResponseFactory.Success(response, "Reports fetched successfully."));
             }
             catch (Exception ex)
             {
