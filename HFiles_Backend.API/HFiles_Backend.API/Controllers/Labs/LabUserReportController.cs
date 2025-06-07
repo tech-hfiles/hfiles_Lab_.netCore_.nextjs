@@ -31,6 +31,7 @@ namespace HFiles_Backend.API.Controllers.Labs
         private readonly EmailService _emailService = emailService;
         private readonly ILogger<LabUserReportController> _logger = logger;
 
+
         // Method to Map Report Type
         private static int GetReportTypeValue(string? reportType)
         {
@@ -48,6 +49,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             };
         }
 
+
         // Method to Reverse Map the Report Type
         private static string ReverseReportTypeMapping(int reportTypeId)
         {
@@ -64,6 +66,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _ => "Unknown Report Type"
             };
         }
+
 
 
 
