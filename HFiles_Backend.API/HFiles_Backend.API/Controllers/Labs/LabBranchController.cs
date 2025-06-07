@@ -103,6 +103,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Verify Branch OTP
         [HttpPost("labs/branches/verify/otp")]
+        [Authorize]
         public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto)
         {
             if (!ModelState.IsValid)

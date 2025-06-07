@@ -311,8 +311,18 @@ namespace HFiles_Backend.API.Controllers.Labs
 					})
 					.ToDictionaryAsync(x => x.LabUserReportId, x => x.LatestResendEpochTime);
 
+                long? firstSentEpoch = labUserReportsDict.Values.Min(l => l.EpochTime > 0 ? l.EpochTime : (long?)null);
+                long? lastSentEpoch = labUserReportsDict.Values.Max(l => l.EpochTime > 0 ? l.EpochTime : (long?)null);
 
-				var responseData = userReports.Select(userReport =>
+                string firstSentDate = firstSentEpoch.HasValue
+                    ? DateTimeOffset.FromUnixTimeSeconds(firstSentEpoch.Value).UtcDateTime.ToString("dd-MM-yyyy")
+                    : "No Reports";
+
+                string lastSentDate = lastSentEpoch.HasValue
+                    ? DateTimeOffset.FromUnixTimeSeconds(lastSentEpoch.Value).UtcDateTime.ToString("dd-MM-yyyy")
+                    : "No Reports";
+
+                var responseData = userReports.Select(userReport =>
 				{
 					int labUserReportId = userReport.LabUserReportId ?? 0;
 
@@ -333,7 +343,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 						? DateTimeOffset.FromUnixTimeSeconds(latestResendEpoch).UtcDateTime.ToString("dd-MM-yyyy")
 						: "Not Resend";
 
-					return new
+                    return new
 					{
 						userReport.Id,
 						filename = userReport.ReportName,
@@ -359,10 +369,13 @@ namespace HFiles_Backend.API.Controllers.Labs
 						HFID = userDetails.user_membernumber,
 						FullName = fullName,
 						Email = userDetails.user_email,
-						UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image
-					},
-					Reports = responseData
-				}, "Reports fetched successfully."));
+						UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image,
+                        FirstSentReportDate = firstSentDate,
+                        LastSentReportDate = lastSentDate
+                    },
+					Reports = responseData,
+                   
+                }, "Reports fetched successfully."));
 			}
 			catch (Exception ex)
 			{
