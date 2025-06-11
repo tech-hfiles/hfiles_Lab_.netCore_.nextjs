@@ -493,5 +493,121 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
+
+
+
+
+
+        // Revert Branches
+        [HttpPatch("labs/revert-branch")]
+        [Authorize]
+        public async Task<IActionResult> RevertDeletedBranch([FromBody] RevertBranch dto)
+        {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Received request to revert deleted branch. Branch ID: {BranchId}", dto.Id);
+
+            try
+            {
+                var labIdClaim = User.FindFirst("UserId")?.Value;
+                if (labIdClaim == null || !int.TryParse(labIdClaim, out int requestLabId))
+                {
+                    _logger.LogWarning("Revert failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+
+                var revertedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+                if (revertedByIdClaim == null || revertedByIdClaim == null ||
+                    !int.TryParse(revertedByIdClaim.Value, out int revertedById))
+                {
+                    _logger.LogWarning("Member deletion failed: Missing or invalid deletion claims (LabAdminId/Role).");
+                    return Unauthorized(ApiResponseFactory.Fail("Missing or invalid deletion claims (LabAdminId/Role)."));
+                }
+
+                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == revertedById);
+                if (labSuperAdmin == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No Super Admin found.");
+                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
+                }
+
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == requestLabId);
+                if (loggedInLab == null)
+                {
+                    _logger.LogWarning("Promotion failed: Lab ID {LabId} not found.", requestLabId);
+                    return BadRequest(ApiResponseFactory.Fail("Lab not found"));
+                }
+
+                int mainLabId = loggedInLab.LabReference == 0 ? requestLabId : loggedInLab.LabReference;
+
+                var branchIds = await _context.LabSignups
+                    .Where(l => l.LabReference == mainLabId)
+                    .Select(l => l.Id)
+                    .ToListAsync();
+
+                branchIds.Add(mainLabId);
+
+                if (!await _labAuthorizationService.IsLabAuthorized(requestLabId, User))
+                {
+                    _logger.LogWarning("Revert failed: Unauthorized access for Lab ID {LabId}.", requestLabId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+                }
+
+              
+                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id && (branchIds.Contains(l.Id) || l.Id == mainLabId) &&  l.DeletedBy != 0);
+
+                if (branch == null)
+                {
+                    _logger.LogWarning("Revert failed: Branch ID {BranchId} is not marked as deleted.", dto.Id);
+                    return NotFound(ApiResponseFactory.Fail("Branch not found or not deleted."));
+                }
+
+                var revertedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                if (revertedByUser == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No user found for Super Admin ID {SuperAdminId}.", labSuperAdmin.Id);
+                    return BadRequest(ApiResponseFactory.Fail("No user found."));
+                }
+
+                var revertedBy = $"{revertedByUser.user_firstname} {revertedByUser.user_lastname}";
+
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    branch.DeletedBy = 0; 
+
+                    _context.Update(branch);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var response = new
+                    {
+                        BranchId = dto.Id,
+                        RevertedBy = revertedBy,
+                        RevertedByRole = revertedByRoleClaim?.Value
+                    };
+
+                    _logger.LogInformation("Successfully reverted Branch ID {BranchId} by User ID {RevertedBy}, Role: {RevertedByRole}",
+                        response.BranchId, response.RevertedBy, response.RevertedByRole);
+
+                    return Ok(ApiResponseFactory.Success(response, "Branch reverted successfully."));
+
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Revert failed: Error occurred while reverting Branch ID {BranchId}.", dto.Id);
+                    return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while reverting the branch."));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error occurred in Branch Revert API.");
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error."));
+            }
+        }
     }
 }

@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
+using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -348,6 +349,309 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 _logger.LogError(ex, "Member deletion failed due to an unexpected error for Member ID {MemberId}", memberId);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
+        }
+
+
+
+
+
+        // Get all Deleted Users of the selected Lab
+        [HttpGet("labs/{labId}/deleted-users")]
+        [Authorize]
+        public async Task<IActionResult> GetDeletedUsers(int labId)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+            _logger.LogInformation("Fetching deleted users for Lab ID: {LabId}", labId);
+
+            try
+            {
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int LabId))
+                {
+                    _logger.LogWarning("Branch creation failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+                if (!await _labAuthorizationService.IsLabAuthorized(LabId, User))
+                {
+                    _logger.LogWarning("Unauthorized access attempt for Lab ID {LabId}", LabId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+                }
+
+
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == LabId);
+                if (loggedInLab == null)
+                {
+                    _logger.LogWarning("Promotion failed: Lab ID {LabId} not found.", LabId);
+                    return BadRequest(ApiResponseFactory.Fail("Lab not found"));
+                }
+
+                int mainLabId = loggedInLab.LabReference == 0 ? LabId : loggedInLab.LabReference;
+
+                var branchIds = await _context.LabSignups
+                    .Where(l => l.LabReference == mainLabId)
+                    .Select(l => l.Id)
+                    .ToListAsync();
+
+                branchIds.Add(mainLabId);
+
+                var deletedMembers = await _context.LabMembers
+                    .Where(m => m.LabId == labId && m.DeletedBy != 0)
+                    .Select(m => new
+                    {
+                        m.Id,
+                        m.UserId,
+                        m.LabId,
+                        m.Role,
+                        DeletedByUser = (from sa in _context.LabSuperAdmins
+                                         join ud in _context.UserDetails on sa.UserId equals ud.user_id
+                                         where sa.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                         select ud.user_firstname + " " + ud.user_lastname)
+                                         .FirstOrDefault() ??
+                                         (from lm in _context.LabMembers
+                                         join ud in _context.UserDetails on lm.UserId equals ud.user_id
+                                         where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                         select ud.user_firstname + " " + ud.user_lastname)
+                                         .FirstOrDefault(),
+
+                        DeletedByUserRole = (from sa in _context.LabSuperAdmins
+                                             where sa.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                             select "Super Admin")
+                                             .FirstOrDefault() ??
+                                             (from lm in _context.LabMembers
+                                             where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                             select lm.Role)
+                                             .FirstOrDefault() ?? "Unknown"
+                    })
+                    .ToListAsync();
+
+                var deletedUsers = new
+                {
+                    DeletedMembers = deletedMembers
+                };
+
+                _logger.LogInformation("Total deleted users fetched for Lab ID {LabId} & Members - {M_Count}",
+                    labId, deletedMembers.Count);
+
+                if (!deletedMembers.Any())
+                {
+                    _logger.LogWarning("No deleted users found for Lab ID {LabId}.", labId);
+                    return NotFound(ApiResponseFactory.Fail($"No deleted users found for this lab."));
+                }
+
+                return Ok(ApiResponseFactory.Success(deletedUsers, "Deleted users fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to fetch deleted users for Lab ID {LabId}.", labId);
+                return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred."));
+            }
+        }
+
+
+
+
+
+        // Revert Deleted Users
+        [HttpPatch("labs/revert-user")]
+        [Authorize]
+        public async Task<IActionResult> RevertDeletedUser([FromBody] RevertUser dto)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+
+            _logger.LogInformation("Received request to revert deleted user. User ID: {UserId}, Lab ID: {LabId}, New Role: {Role}",
+                dto.Id, dto.LabId, dto.Role);
+
+            try
+            {
+                var labIdClaim = User.FindFirst("UserId")?.Value;
+                var labAdminIdClaim = User.FindFirst("LabAdminId")?.Value;
+
+                if (labIdClaim == null || !int.TryParse(labIdClaim, out int requestLabId))
+                {
+                    _logger.LogWarning("Revert failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+
+                if (!await _labAuthorizationService.IsLabAuthorized(requestLabId, User))
+                {
+                    _logger.LogWarning("Revert failed: Unauthorized access for Lab ID {LabId}.", requestLabId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+                }
+
+                var revertedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+                if (revertedByIdClaim == null || revertedByIdClaim == null ||
+                    !int.TryParse(revertedByIdClaim.Value, out int revertedById))
+                {
+                    _logger.LogWarning("Member deletion failed: Missing or invalid deletion claims (LabAdminId/Role).");
+                    return Unauthorized(ApiResponseFactory.Fail("Missing or invalid deletion claims (LabAdminId/Role)."));
+                }
+
+                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == revertedById);
+                if (labSuperAdmin == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No Super Admin found.");
+                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
+
+                }
+
+                var user = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == dto.Id && m.LabId == dto.LabId && m.DeletedBy != 0);
+
+                if (user == null)
+                {
+                    _logger.LogWarning("Revert failed: User ID {UserId} in Lab ID {LabId} is not marked as deleted.", dto.Id, dto.LabId);
+                    return NotFound(ApiResponseFactory.Fail("User not found or not deleted."));
+                }
+
+                var revertedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                if (revertedByUser == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No user found for Super Admin ID {SuperAdminId}.", labSuperAdmin.Id);
+                    return BadRequest(ApiResponseFactory.Fail("No user found."));
+                }
+
+                var revertedBy = $"{revertedByUser.user_firstname} {revertedByUser.user_lastname}";
+
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    user.DeletedBy = 0;
+                    user.Role = dto.Role ?? "Member";
+
+                    user.PromotedBy = dto.Role == "Admin" && int.TryParse(labAdminIdClaim, out int adminId) ? adminId : 0;
+
+                    _context.Update(user);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var response = new
+                    {
+                        UserId = dto.Id,
+                        LabId = dto.LabId,
+                        NewRole = dto.Role ?? "Member",
+                        PromotedBy = user.PromotedBy,
+                        RevertedBy = revertedBy,
+                        RevertedByRole = revertedByRoleClaim?.Value
+                    };
+
+                    _logger.LogInformation("Successfully reverted User ID {UserId} in Lab ID {LabId} with new Role: {NewRole}. PromotedBy: {PromotedBy}, RevertedBy: {RevertedBy}",
+                        response.UserId, response.LabId, response.NewRole, response.PromotedBy, response.RevertedBy);
+
+                    return Ok(ApiResponseFactory.Success(response, "User reverted successfully."));
+
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Revert failed: Error occurred while reverting User ID {UserId} in Lab ID {LabId}.", dto.Id, dto.LabId);
+                    return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while reverting the user."));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error occurred in User Revert API.");
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error."));
+            }
+        }
+
+
+
+
+
+        // Permanently Removes User
+        [HttpDelete("labs/remove-user")]
+        [Authorize]
+        public async Task<IActionResult> PermanentlyDeleteUser([FromBody] DeleteUser dto)
+        {
+            HttpContext.Items["Log-Category"] = "User Management";
+
+            _logger.LogInformation("Received request to permanently delete user. User ID: {UserId}, Lab ID: {LabId}", dto.Id, dto.LabId);
+
+            try
+            {
+                var labIdClaim = User.FindFirst("UserId")?.Value;
+                if (labIdClaim == null || !int.TryParse(labIdClaim, out int requestLabId))
+                {
+                    _logger.LogWarning("Deletion failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+
+                if (!await _labAuthorizationService.IsLabAuthorized(requestLabId, User))
+                {
+                    _logger.LogWarning("Deletion failed: Unauthorized access for Lab ID {LabId}.", requestLabId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
+                }
+
+                var deletedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
+                var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+
+                if (deletedByIdClaim == null || deletedByIdClaim == null ||
+                    !int.TryParse(deletedByIdClaim.Value, out int deletedById))
+                {
+                    _logger.LogWarning("Member deletion failed: Missing or invalid deletion claims (LabAdminId/Role).");
+                    return Unauthorized(ApiResponseFactory.Fail("Missing or invalid deletion claims (LabAdminId/Role)."));
+                }
+
+                var labSuperAdmin = await _context.LabSuperAdmins.FirstOrDefaultAsync(a => a.Id == deletedById);
+                if (labSuperAdmin == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No Super Admin found.");
+                    return BadRequest(ApiResponseFactory.Fail("No Super Admin found."));
+
+                }
+
+                var user = await _context.LabMembers.FirstOrDefaultAsync(m => m.Id == dto.Id && m.LabId == dto.LabId && m.DeletedBy != 0);
+
+                if (user == null)
+                {
+                    _logger.LogWarning("Deletion failed: User ID {UserId} in Lab ID {LabId} not found.", dto.Id, dto.LabId);
+                    return NotFound(ApiResponseFactory.Fail("User not found."));
+                }
+
+                var deletedByUser = await _context.UserDetails.FirstOrDefaultAsync(u => u.user_id == labSuperAdmin.UserId);
+                if (deletedByUser == null)
+                {
+                    _logger.LogWarning("Branch deletion failed: No user found for Super Admin ID {SuperAdminId}.", labSuperAdmin.Id);
+                    return BadRequest(ApiResponseFactory.Fail("No user found."));
+                }
+
+                var deletedBy = $"{deletedByUser.user_firstname} {deletedByUser.user_lastname}";
+
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    _context.Remove(user);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var response = new
+                    {
+                        UserId = dto.Id,
+                        LabId = dto.LabId,
+                        DeletedBy = deletedBy,
+                        DeletedByRole = deletedByRoleClaim?.Value
+                    };
+
+                    _logger.LogInformation("Successfully deleted User ID {UserId} from Lab ID {LabId}. Deleted by {DeletedByUsername} ({DeletedByRole})",
+                        response.UserId, response.LabId, response.DeletedBy, response.DeletedByRole);
+
+                    return Ok(ApiResponseFactory.Success(response, "User permanently deleted successfully."));
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Deletion failed: Error occurred while deleting User ID {UserId} in Lab ID {LabId}.", dto.Id, dto.LabId);
+                    return StatusCode(500, ApiResponseFactory.Fail("An unexpected error occurred while deleting the user."));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error occurred in User Deletion API.");
+                return StatusCode(500, ApiResponseFactory.Fail("Unexpected error."));
             }
         }
     }
