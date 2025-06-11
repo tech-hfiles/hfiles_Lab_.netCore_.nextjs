@@ -9,13 +9,22 @@ using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.API.Services
 {
-    public class EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+    public class EmailService
     {
-        private readonly IConfiguration _configuration = configuration;
-        private readonly ILogger<EmailService> _logger = logger;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<EmailService> _logger;
+
+        public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+        {
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            _logger.LogInformation("EmailService initialized successfully.");
+        }
 
         public async Task SendEmailAsync(string toEmail, string subject, string body)
         {
+            _logger.LogInformation("Preparing to send email to {Email}.", toEmail);
             await SendEmailWithAttachmentsAsync(toEmail, subject, body, new List<Attachment>());
         }
 
@@ -58,7 +67,7 @@ namespace HFiles_Backend.API.Services
                     Timeout = 60000
                 };
 
-                _logger.LogInformation("Sending email to {Email} with {AttachmentCount} attachments.", toEmail, attachments.Count);
+                _logger.LogInformation("Sending email to {Email}. Attachments Count: {AttachmentCount}.", toEmail, attachments.Count);
 
                 await smtpClient.SendMailAsync(mailMessage);
 
@@ -66,7 +75,7 @@ namespace HFiles_Backend.API.Services
             }
             catch (SmtpException smtpEx)
             {
-                _logger.LogError(smtpEx, "SMTP error while sending email to {Email}. StatusCode: {StatusCode}", toEmail, smtpEx.StatusCode);
+                _logger.LogError(smtpEx, "SMTP error occurred while sending email to {Email}. StatusCode: {StatusCode}", toEmail, smtpEx.StatusCode);
                 throw new Exception("SMTP failure. Please check credentials or server settings.", smtpEx);
             }
             catch (Exception ex)
@@ -81,7 +90,7 @@ namespace HFiles_Backend.API.Services
                     attachment.Dispose();
                 }
 
-                _logger.LogInformation("Email process cleanup completed.");
+                _logger.LogInformation("Email process cleanup completed for {Email}.", toEmail);
             }
         }
     }

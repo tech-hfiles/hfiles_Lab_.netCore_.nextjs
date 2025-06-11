@@ -1,5 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using HFiles_Backend.Domain.Entities.Labs;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 
 namespace HFiles_Backend.Infrastructure.Data
 {
@@ -29,6 +33,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabSuperAdmin> LabSuperAdmins { get; set; }
         public DbSet<LabMember> LabMembers { get; set; }
         public DbSet<LabResendReports> LabResendReports { get; set; }
-
+        public DbSet<LabAuditLog> LabAuditLogs { get; set; }
+        public DbSet<LabErrorLog> LabErrorLogs { get; set; }
     }
 }

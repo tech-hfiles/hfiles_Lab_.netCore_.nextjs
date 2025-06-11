@@ -74,15 +74,17 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Upload single/batch lab reports of muliple users
         [HttpPost("labs/reports/upload")]
+        [Authorize]
         public async Task<IActionResult> UploadReports([FromForm] UserReportBatchUpload dto)
         {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Received batch report upload request. Entries Count: {EntryCount}", dto.Entries?.Count);
+
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
@@ -90,46 +92,62 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                {
+                    _logger.LogWarning("Report upload failed: Invalid or missing LabId claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
 
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                {
+                    _logger.LogWarning("Report upload failed: Unauthorized access for Lab ID {LabId}", labId);
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
+                }
 
                 if (dto.Entries == null || dto.Entries.Count == 0)
+                {
+                    _logger.LogWarning("Report upload failed: No entries provided.");
                     return BadRequest(ApiResponseFactory.Fail("No entries provided in the payload."));
+                }
 
                 string uploadsFolder = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads");
                 if (!Directory.Exists(uploadsFolder))
+                {
                     Directory.CreateDirectory(uploadsFolder);
+                }
 
                 var entryResults = new List<object>();
                 int successfulUploads = 0;
 
                 foreach (var entry in dto.Entries)
                 {
+                    _logger.LogInformation("Processing report upload for HFID: {HFID}, Email: {Email}", entry.HFID, entry.Email);
+
                     if (entry.ReportFiles == null || entry.ReportTypes == null)
                     {
+                        _logger.LogWarning("Report upload failed: ReportFiles or ReportTypes missing for HFID {HFID}, Email {Email}.", entry.HFID, entry.Email);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Failed", Reason = "ReportFiles or ReportTypes missing" });
                         continue;
                     }
 
                     if (entry.ReportFiles.Count != entry.ReportTypes.Count)
                     {
+                        _logger.LogWarning("Report upload failed: File and report type count mismatch for HFID {HFID}, Email {Email}.", entry.HFID, entry.Email);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Failed", Reason = $"Mismatch between files ({entry.ReportFiles.Count}) and report types ({entry.ReportTypes.Count})" });
                         continue;
                     }
 
                     if (entry.ReportFiles.Count == 0)
                     {
+                        _logger.LogWarning("Report upload failed: No files provided for HFID {HFID}, Email {Email}.", entry.HFID, entry.Email);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Failed", Reason = "No report files provided" });
                         continue;
                     }
 
-                    var userDetails = await _context.Set<UserDetails>()
-                        .FirstOrDefaultAsync(u => u.user_membernumber == entry.HFID && u.user_email == entry.Email);
+                    var userDetails = await _context.Set<UserDetails>().FirstOrDefaultAsync(u => u.user_membernumber == entry.HFID && u.user_email == entry.Email);
 
                     if (userDetails == null)
                     {
+                        _logger.LogWarning("Report upload failed: No matching user found for HFID {HFID}, Email {Email}.", entry.HFID, entry.Email);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Failed", Reason = "HFID and Email do not match any user" });
                         continue;
                     }
@@ -139,16 +157,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                     long epoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     var uploadedFiles = new List<object>();
 
-                    for (int i = 0; i < entry.ReportFiles.Count; i++)
+                    foreach (var (file, reportType) in entry.ReportFiles.Zip(entry.ReportTypes))
                     {
-                        var file = entry.ReportFiles[i];
-                        var reportType = entry.ReportTypes[i];
-
                         if (file == null || file.Length == 0)
                             continue;
 
-                        var fileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{DateTime.Now:MM-dd-yyyy_HH-mm-ss}{Path.GetExtension(file.FileName)}";
-                        var filePath = Path.Combine(uploadsFolder, fileName);
+                        string fileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{DateTime.UtcNow:MM-dd-yyyy_HH-mm-ss}{Path.GetExtension(file.FileName)}";
+                        string filePath = Path.Combine(uploadsFolder, fileName);
 
                         using (var stream = new FileStream(filePath, FileMode.Create))
                         {
@@ -197,28 +212,34 @@ namespace HFiles_Backend.API.Controllers.Labs
                     if (uploadedFiles.Any())
                     {
                         successfulUploads++;
+                        _logger.LogInformation("User {HFID} ({Email}): Upload successful. Files: {UploadedFiles}", entry.HFID, entry.Email, uploadedFiles);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Success", UploadedFiles = uploadedFiles });
                     }
                     else
                     {
+                        _logger.LogWarning("User {HFID} ({Email}): Upload failed. No report files were uploaded.", entry.HFID, entry.Email);
                         entryResults.Add(new { entry.HFID, entry.Email, Status = "Failed", Reason = "Valid user, but no report files were uploaded" });
                     }
                 }
 
                 if (successfulUploads == 0)
                 {
+                    _logger.LogError("Upload process failed: No reports uploaded. All entries failed.");
                     return BadRequest(ApiResponseFactory.Fail(entryResults, "No reports were uploaded. All entries failed."));
                 }
 
                 if (successfulUploads < dto.Entries.Count)
                 {
+                    _logger.LogWarning("Partial success: {SuccessfulUploads} reports uploaded, {FailedUploads} failed.", successfulUploads, dto.Entries.Count - successfulUploads);
                     return StatusCode(202, ApiResponseFactory.PartialSuccess(entryResults, "Some reports uploaded successfully. Others failed."));
                 }
 
+                _logger.LogInformation("Upload process completed: All {TotalUploads} reports uploaded successfully.", successfulUploads);
                 return Ok(ApiResponseFactory.Success(entryResults, "All reports uploaded successfully."));
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Report upload failed due to an unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -227,187 +248,107 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-		// Fetch All Reports of Selected User
-		[HttpGet("labs/reports/{userId}")]
-		public async Task<IActionResult> GetLabUserReportsByUserId([FromRoute]int userId, [FromQuery] string? reportType)
-		{
-			try
-			{
-				var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-				if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-					return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
-
-				if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-					return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
-
-				var currentLab = await _context.LabSignups.FirstOrDefaultAsync(lsu => lsu.Id == labId);
-				if (currentLab == null)
-					return NotFound(ApiResponseFactory.Fail($"LabId {labId} not found."));
-
-				var userDetails = await _context.Set<UserDetails>()
-					.Select(u => new
-					{
-						u.user_id,
-						u.user_membernumber,
-						u.user_firstname,
-						u.user_lastname,
-						u.user_email,
-						u.user_image
-					})
-					.FirstOrDefaultAsync(u => u.user_id == userId);
-
-				if (userDetails == null)
-					return NotFound(ApiResponseFactory.Fail($"User details not found for UserId {userId}."));
-
-				string fullName = $"{userDetails.user_firstname} {userDetails.user_lastname}".Trim();
-
-				List<int> relatedLabIds;
-				if (currentLab.LabReference == 0)
-				{
-					relatedLabIds = await _context.LabSignups
-						.Where(lsu => lsu.LabReference == labId)
-						.Select(lsu => lsu.Id)
-						.ToListAsync();
-					relatedLabIds.Add(labId);
-				}
-				else
-				{
-					relatedLabIds = await _context.LabSignups
-						.Where(lsu => lsu.LabReference == currentLab.LabReference)
-						.Select(lsu => lsu.Id)
-						.ToListAsync();
-					relatedLabIds.Add(currentLab.LabReference);
-				}
-
-				var userReports = await _context.UserReports
-					.Where(ur => ur.UserId == userId
-								 && ur.LabId != null
-								 && relatedLabIds.Contains(ur.LabId.Value)
-								 && ur.UploadedBy == "Lab")
-					.ToListAsync();
-
-				var labUserReportsDict = await _context.LabUserReports
-					.Where(lur => lur.UserId == userId && relatedLabIds.Contains(lur.LabId))
-					.ToDictionaryAsync(lur => lur.Id, lur => lur);
-
-				if (userReports.Count == 0 && labUserReportsDict.Count == 0)
-					return NotFound(ApiResponseFactory.Fail($"No reports found for UserId {userId} in related labs."));
-
-				var allBranchIds = labUserReportsDict.Values.Select(l => l.BranchId).Distinct().ToList();
-
-				var branchNamesDict = await _context.LabSignups
-					.Where(lsu => allBranchIds.Contains(lsu.Id))
-					.ToDictionaryAsync(lsu => lsu.Id, lsu => lsu.LabName);
-
-				var allLabUserReportIds = userReports
-	                .Where(ur => ur.LabUserReportId is int)
-	                .Select(ur => ur.LabUserReportId!.Value)
-	                .Distinct()
-	                .ToList();
-
-				var latestResendTimes = await _context.LabResendReports
-					.Where(r => allLabUserReportIds.Contains(r.LabUserReportId))
-					.GroupBy(r => r.LabUserReportId)
-					.Select(g => new
-					{
-						LabUserReportId = g.Key,
-						LatestResendEpochTime = g.Max(x => x.ResendEpochTime)
-					})
-					.ToDictionaryAsync(x => x.LabUserReportId, x => x.LatestResendEpochTime);
-
-                long? firstSentEpoch = labUserReportsDict.Values.Min(l => l.EpochTime > 0 ? l.EpochTime : (long?)null);
-                long? lastSentEpoch = labUserReportsDict.Values.Max(l => l.EpochTime > 0 ? l.EpochTime : (long?)null);
-
-                string firstSentDate = firstSentEpoch.HasValue
-                    ? DateTimeOffset.FromUnixTimeSeconds(firstSentEpoch.Value).UtcDateTime.ToString("dd-MM-yyyy")
-                    : "No Reports";
-
-                string lastSentDate = lastSentEpoch.HasValue
-                    ? DateTimeOffset.FromUnixTimeSeconds(lastSentEpoch.Value).UtcDateTime.ToString("dd-MM-yyyy")
-                    : "No Reports";
-
-                var responseData = userReports.Select(userReport =>
-				{
-					int labUserReportId = userReport.LabUserReportId ?? 0;
-
-					labUserReportsDict.TryGetValue(labUserReportId, out var matchedLabReport);
-					int branchId = matchedLabReport?.BranchId ?? 0;
-					long epochTime = matchedLabReport?.EpochTime ?? 0;
-
-					string createdDate = epochTime > 0
-						? DateTimeOffset.FromUnixTimeSeconds(epochTime).UtcDateTime.ToString("dd-MM-yyyy")
-						: "";
-
-					string branchName = branchNamesDict.TryGetValue(branchId, out string? value)
-										? value ?? "Unknown Branch"
-										: currentLab.LabName ?? "Unknown Lab";
-
-					latestResendTimes.TryGetValue(labUserReportId, out long latestResendEpoch);
-					string resendDate = latestResendEpoch > 0
-						? DateTimeOffset.FromUnixTimeSeconds(latestResendEpoch).UtcDateTime.ToString("dd-MM-yyyy")
-						: "Not Resend";
-
-                    return new
-					{
-						userReport.Id,
-						filename = userReport.ReportName,
-						fileURL = userReport.ReportUrl,
-						labName = currentLab.LabName,
-                        reportType = ReverseReportTypeMapping(userReport.ReportId),
-                        branchName,
-						epochTime,
-						createdDate,
-						LabUserReportId = labUserReportId,
-						resendDate
-					};
-				})
-                .Where(report => string.IsNullOrEmpty(reportType) || report.reportType == reportType)
-                .ToList();
-
-                var ReportCounts = responseData.Count;
-
-
-                return Ok(ApiResponseFactory.Success(new
-                {
-                    ReportCounts,
-
-                    UserDetails = new
-                    {
-                        UserId = userId,
-                        HFID = userDetails.user_membernumber,
-                        FullName = fullName,
-                        Email = userDetails.user_email,
-                        UserImage = string.IsNullOrEmpty(userDetails.user_image) ? "No Image Available" : userDetails.user_image,
-                        FirstSentReportDate = firstSentDate,
-                        LastSentReportDate = lastSentDate
-                    },
-                    Reports = responseData,
-
-                }, "Reports fetched successfully."));
-			}
-			catch (Exception ex)
-			{
-				return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
-			}
-		}
-
-
-
-
-
-
-		// Fetch All Distinct Users for All Dates (Currently we do not use this API in Frontend)
-		[HttpGet("labs/reports/all")]
-        public async Task<IActionResult> GetLabUserReports()
+        // Fetch All Reports of Selected User
+        [HttpGet("labs/reports/{userId}")]
+        public async Task<IActionResult> GetLabUserReportsByUserId([FromRoute] int userId, [FromQuery] string? reportType)
         {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Fetching reports for User ID: {UserId}, Report Type: {ReportType}", userId, reportType ?? "All");
+
             try
             {
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                {
+                    _logger.LogWarning("Report retrieval failed: Invalid or missing LabId claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
 
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                {
+                    _logger.LogWarning("Report retrieval failed: Unauthorized access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage data for your main lab or its branches."));
+                }
+
+                var currentLab = await _context.LabSignups.FirstOrDefaultAsync(lsu => lsu.Id == labId);
+                if (currentLab == null)
+                {
+                    _logger.LogWarning("Report retrieval failed: Lab ID {LabId} not found.", labId);
+                    return NotFound(ApiResponseFactory.Fail($"LabId {labId} not found."));
+                }
+
+                var userDetails = await _context.Set<UserDetails>()
+                    .Select(u => new
+                    {
+                        u.user_id,
+                        u.user_membernumber,
+                        u.user_firstname,
+                        u.user_lastname,
+                        u.user_email,
+                        u.user_image
+                    })
+                    .FirstOrDefaultAsync(u => u.user_id == userId);
+
+                if (userDetails == null)
+                {
+                    _logger.LogWarning("Report retrieval failed: User ID {UserId} not found.", userId);
+                    return NotFound(ApiResponseFactory.Fail($"User details not found for UserId {userId}."));
+                }
+
+                var relatedLabIds = await _context.LabSignups
+                    .Where(lsu => lsu.LabReference == (currentLab.LabReference == 0 ? labId : currentLab.LabReference))
+                    .Select(lsu => lsu.Id)
+                    .ToListAsync();
+                relatedLabIds.Add(currentLab.LabReference == 0 ? labId : currentLab.LabReference);
+
+                var userReports = await _context.UserReports
+                    .Where(ur => ur.UserId == userId && ur.LabId != null && relatedLabIds.Contains(ur.LabId.Value) && ur.UploadedBy == "Lab")
+                    .ToListAsync();
+
+                if (userReports.Count == 0)
+                {
+                    _logger.LogWarning("Report retrieval failed: No reports found for User ID {UserId}.", userId);
+                    return NotFound(ApiResponseFactory.Fail($"No reports found for UserId {userId} in related labs."));
+                }
+
+                _logger.LogInformation("Reports fetched successfully for User ID {UserId}. Total Reports: {ReportCount}", userId, userReports.Count);
+
+                return Ok(ApiResponseFactory.Success(new { Reports = userReports }, "Reports fetched successfully."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Report retrieval failed due to an unexpected error.");
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
+        }
+
+
+
+
+
+        // Fetch All Distinct Users for All Dates (Currently we do not use this API in Frontend)
+        [HttpGet("labs/reports/all")]
+        public async Task<IActionResult> GetLabUserReports()
+        {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Fetching reports for Lab ID: {LabId}", User.Claims.FirstOrDefault(c => c.Type == "UserId")?.Value);
+
+            try
+            {
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                {
+                    _logger.LogWarning("Report retrieval failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                {
+                    _logger.LogWarning("Report retrieval failed: Unauthorized access for Lab ID {LabId}", labId);
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only access data for your main lab or its branches."));
+                }
 
                 var latestReports = await _context.LabUserReports
                     .Where(lur => lur.LabId == labId)
@@ -416,7 +357,10 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .ToListAsync();
 
                 if (latestReports.Count == 0)
+                {
+                    _logger.LogWarning("Report retrieval failed: No reports found for Lab ID {LabId}.", labId);
                     return NotFound(ApiResponseFactory.Fail($"No reports found for LabId {labId}."));
+                }
 
                 var userIds = latestReports.Select(lr => lr.UserId).ToList();
 
@@ -452,10 +396,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
                 }).Where(x => x != null).ToList();
 
+                _logger.LogInformation("Reports fetched successfully for Lab ID {LabId}. Total Reports: {ReportCount}", labId, responseData.Count);
+
                 return Ok(ApiResponseFactory.Success(responseData, "Reports fetched successfully."));
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Report retrieval failed due to an unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -468,25 +415,38 @@ namespace HFiles_Backend.API.Controllers.Labs
         [HttpGet("labs/{labId}/reports")]
         public async Task<IActionResult> GetLabUserReports([FromRoute] int labId, [FromQuery] string? startDate, [FromQuery] string? endDate)
         {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Fetching reports for Lab ID: {LabId}, Start Date: {StartDate}, End Date: {EndDate}", labId, startDate ?? "Default", endDate ?? "Default");
+
             try
             {
                 if (labId <= 0)
+                {
+                    _logger.LogWarning("Report retrieval failed: Invalid LabId.");
                     return BadRequest(ApiResponseFactory.Fail("Invalid LabId."));
+                }
 
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
                 if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int loggedInLabId))
+                {
+                    _logger.LogWarning("Report retrieval failed: Invalid or missing LabId claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
 
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
+                {
+                    _logger.LogWarning("Report retrieval failed: Unauthorized access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only access data for your main lab or its branches."));
+                }
 
                 long startEpoch, endEpoch;
-
                 if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
                 {
                     if (!DateTime.TryParseExact(startDate, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var selectedStartDate) ||
                         !DateTime.TryParseExact(endDate, "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var selectedEndDate))
                     {
+                        _logger.LogWarning("Report retrieval failed: Invalid date format.");
                         return BadRequest(ApiResponseFactory.Fail("Invalid date format. Use dd/MM/yyyy for both start and end dates."));
                     }
 
@@ -500,11 +460,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                     startEpoch = new DateTimeOffset(yesterday).ToUnixTimeSeconds();
                     endEpoch = new DateTimeOffset(today.AddDays(1).AddTicks(-1)).ToUnixTimeSeconds();
                 }
-                var allReports = await _context.LabUserReports
-                    .Where(lur => (lur.LabId == labId && lur.BranchId == 0) || lur.BranchId == labId)
-                    .GroupBy(lur => lur.UserId)
-                    .Select(g => g.OrderByDescending(r => r.EpochTime).First())
-                    .ToListAsync();
 
                 var filteredReports = await _context.LabUserReports
                     .Where(lur => (lur.LabId == labId && lur.BranchId == 0) || lur.BranchId == labId)
@@ -513,10 +468,11 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Select(g => g.OrderByDescending(r => r.EpochTime).First())
                     .ToListAsync();
 
-                var PatientReports = allReports.Count;
-
                 if (filteredReports.Count == 0)
-                    return NotFound(ApiResponseFactory.Fail($"No reports found of past 48 hours."));
+                {
+                    _logger.LogWarning("Report retrieval failed: No reports found in selected date range.");
+                    return NotFound(ApiResponseFactory.Fail("No reports found in the selected date range."));
+                }
 
                 var userIds = filteredReports.Select(lr => lr.UserId).ToList();
 
@@ -532,11 +488,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var reportIdsDict = await _context.UserReports
                     .Where(ur => userIds.Contains(ur.UserId) && ur.LabId == labId)
                     .GroupBy(ur => ur.UserId)
-                    .Select(g => new
-                    {
-                        UserId = g.Key,
-                        g.OrderByDescending(ur => ur.CreatedDate).First().ReportId
-                    })
+                    .Select(g => new { UserId = g.Key, g.OrderByDescending(ur => ur.CreatedDate).First().ReportId })
                     .ToDictionaryAsync(x => x.UserId, x => x.ReportId);
 
                 var responseData = filteredReports.Select(report =>
@@ -545,7 +497,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                         return null;
 
                     reportIdsDict.TryGetValue(report.UserId, out int reportId);
- 
+
                     return new
                     {
                         report.Id,
@@ -557,16 +509,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                     };
                 }).Where(x => x != null).ToList();
 
-                var response = new
-                {
-                    PatientReports,
-                    responseData
-                };
+                _logger.LogInformation("Reports fetched successfully for Lab ID {LabId}. Total Reports: {ReportCount}", labId, responseData.Count);
 
-                return Ok(ApiResponseFactory.Success(response, "Reports fetched successfully."));
+                return Ok(ApiResponseFactory.Success(new { Reports = responseData }, "Reports fetched successfully."));
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Report retrieval failed due to an unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -575,132 +524,157 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
-		// Resend Reports using LabUserReportID
-		[HttpPost("labs/reports/resend")]
-		public async Task<IActionResult> ResendReport([FromBody] ResendReport dto)
-		{
-			if (!ModelState.IsValid)
-			{
-				var errors = ModelState.Values
-					.SelectMany(v => v.Errors)
-					.Select(e => e.ErrorMessage)
-					.ToList();
-
-				return BadRequest(ApiResponseFactory.Fail(errors));
-			}
-
-			try
-			{
-				var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-				if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-					return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
-
-				if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-					return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
-
-				if (dto.Ids == null || dto.Ids.Count == 0)
-					return BadRequest(ApiResponseFactory.Fail("No LabUserReport IDs provided for resending."));
-
-				var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
-				if (loggedInLab == null) return BadRequest(ApiResponseFactory.Fail("Lab not found"));
-
-				int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
-
-				var branchIds = await _context.LabSignups
-					.Where(l => l.LabReference == mainLabId)
-					.Select(l => l.Id)
-					.ToListAsync();
-
-				var successReports = new List<object>();
-				var failedReports = new List<object>();
-				var resendEntries = new List<LabResendReports>();
-
-				foreach (var labUserReportId in dto.Ids)
-				{
-					var labUserReport = await _context.LabUserReports
-						.FirstOrDefaultAsync(lur => lur.Id == labUserReportId);
-
-					if (labUserReport == null || !branchIds.Contains(labUserReport.LabId) && labUserReport.LabId != mainLabId)
-					{
-						failedReports.Add(new
-						{
-							Id = labUserReportId,
-							Status = "Failed",
-							Reason = $"LabUserReport entry not found or not part of an authorized branch."
-						});
-						continue;
-					}
-
-					long currentEpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-					labUserReport.Resend += 1;
-					_context.LabUserReports.Update(labUserReport);
-
-					successReports.Add(new
-					{
-						Id = labUserReportId,
-						Status = "Success",
-						NewResendCount = labUserReport.Resend,
-						labUserReport.EpochTime,
-					});
-
-					resendEntries.Add(new LabResendReports
-					{
-						LabUserReportId = labUserReportId,
-						ResendEpochTime = currentEpochTime
-					});
-				}
-
-				await _context.LabResendReports.AddRangeAsync(resendEntries);
-				await _context.SaveChangesAsync();
-
-				var result = new
-				{
-					Success = successReports,
-					Failed = failedReports
-				};
-
-				if (failedReports.Count == 0)
-					return Ok(ApiResponseFactory.Success(result, "All reports resent successfully."));
-
-				if (successReports.Count == 0)
-					return BadRequest(ApiResponseFactory.Fail(result, "All reports resend operations failed."));
-
-				return Ok(ApiResponseFactory.PartialSuccess(result, "Some reports were resent successfully, others failed."));
-			}
-			catch (Exception ex)
-			{
-				return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
-			}
-		}
-
-
-
-
-
-
-		// Fetch Daily/Weekly/Monthly/Custom Dates Notifications
-		[HttpGet("labs/{labId}/notifications")]
-        public async Task<IActionResult> GetLabNotifications(
-        [FromRoute] int labId,
-        [FromQuery] int? timeframe,
-        [FromQuery] string? startDate,
-        [FromQuery] string? endDate)
+        // Resend Reports using LabUserReportID
+        [HttpPost("labs/reports/resend")]
+        public async Task<IActionResult> ResendReport([FromBody] ResendReport dto)
         {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Received report resend request for LabUserReport IDs: {Ids}", dto.Ids);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            try
+            {
+                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
+                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
+                {
+                    _logger.LogWarning("Report resend failed: Invalid or missing LabId claim.");
+                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabId claim."));
+                }
+
+                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
+                {
+                    _logger.LogWarning("Report resend failed: Unauthorized access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage data for your main lab or its branches."));
+                }
+
+                if (dto.Ids == null || dto.Ids.Count == 0)
+                {
+                    _logger.LogWarning("Report resend failed: No LabUserReport IDs provided.");
+                    return BadRequest(ApiResponseFactory.Fail("No LabUserReport IDs provided for resending."));
+                }
+
+                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
+                if (loggedInLab == null)
+                {
+                    _logger.LogWarning("Report resend failed: Lab ID {LabId} not found.", labId);
+                    return BadRequest(ApiResponseFactory.Fail("Lab not found."));
+                }
+
+                int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
+                var branchIds = await _context.LabSignups.Where(l => l.LabReference == mainLabId).Select(l => l.Id).ToListAsync();
+
+                var successReports = new List<object>();
+                var failedReports = new List<object>();
+                var resendEntries = new List<LabResendReports>();
+
+                foreach (var labUserReportId in dto.Ids)
+                {
+                    var labUserReport = await _context.LabUserReports.FirstOrDefaultAsync(lur => lur.Id == labUserReportId);
+
+                    if (labUserReport == null || (!branchIds.Contains(labUserReport.LabId) && labUserReport.LabId != mainLabId))
+                    {
+                        _logger.LogWarning("Report resend failed: LabUserReport ID {LabUserReportId} not found or unauthorized.", labUserReportId);
+                        failedReports.Add(new
+                        {
+                            Id = labUserReportId,
+                            Status = "Failed",
+                            Reason = "LabUserReport entry not found or not part of an authorized branch."
+                        });
+                        continue;
+                    }
+
+                    long currentEpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+                    labUserReport.Resend += 1;
+                    _context.LabUserReports.Update(labUserReport);
+
+                    successReports.Add(new
+                    {
+                        Id = labUserReportId,
+                        Status = "Success",
+                        NewResendCount = labUserReport.Resend,
+                        labUserReport.EpochTime,
+                    });
+
+                    resendEntries.Add(new LabResendReports
+                    {
+                        LabUserReportId = labUserReportId,
+                        ResendEpochTime = currentEpochTime
+                    });
+
+                    _logger.LogInformation("Report ID {LabUserReportId} resent successfully. New resend count: {ResendCount}", labUserReportId, labUserReport.Resend);
+                }
+
+                await _context.LabResendReports.AddRangeAsync(resendEntries);
+                await _context.SaveChangesAsync();
+
+                var result = new
+                {
+                    Success = successReports,
+                    Failed = failedReports
+                };
+
+                if (failedReports.Count == 0)
+                    return Ok(ApiResponseFactory.Success(result, "All reports resent successfully."));
+
+                if (successReports.Count == 0)
+                    return BadRequest(ApiResponseFactory.Fail(result, "All reports resend operations failed."));
+
+                return Ok(ApiResponseFactory.PartialSuccess(result, "Some reports were resent successfully, others failed."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Report resend request failed due to an unexpected error.");
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
+        }
+
+
+
+
+
+        // Fetch Daily/Weekly/Monthly/Custom Dates Notifications
+        [HttpGet("labs/{labId}/notifications")]
+        public async Task<IActionResult> GetLabNotifications(
+         [FromRoute] int labId,
+         [FromQuery] int? timeframe,
+         [FromQuery] string? startDate,
+         [FromQuery] string? endDate)
+        {
+            HttpContext.Items["Log-Category"] = "Lab Management";
+
+            _logger.LogInformation("Fetching notifications for Lab ID: {LabId}, Timeframe: {Timeframe}, Start Date: {StartDate}, End Date: {EndDate}",
+                labId, timeframe ?? 0, startDate ?? "Default", endDate ?? "Default");
+
             try
             {
                 if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
+                {
+                    _logger.LogWarning("Notification retrieval failed: Unauthorized access for Lab ID {LabId}", labId);
+                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage data for your main lab or its branches."));
+                }
 
                 var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
                 var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
 
                 if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
+                {
+                    _logger.LogWarning("Notification retrieval failed: Invalid or missing LabAdminId claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabAdminId claim."));
+                }
 
                 if (roleClaim == null)
+                {
+                    _logger.LogWarning("Notification retrieval failed: Invalid or missing Role claim.");
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing Role claim."));
+                }
 
                 string role = roleClaim.Value;
                 int? userId = null;
@@ -721,40 +695,30 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 if (userId == null)
+                {
+                    _logger.LogWarning("Notification retrieval failed: Invalid access for role {Role}.", role);
                     return Unauthorized(ApiResponseFactory.Fail("Invalid access for the given role."));
+                }
 
                 long currentEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                long epochStart, epochEnd;
-
-                if (!string.IsNullOrEmpty(startDate) && !string.IsNullOrEmpty(endDate))
+                long epochStart = timeframe switch
                 {
-                    if (!DateTimeOffset.TryParseExact(startDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var startDateParsed) ||
-                        !DateTimeOffset.TryParseExact(endDate, "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var endDateParsed))
-                    {
-                        return BadRequest(ApiResponseFactory.Fail("Invalid date format. Please use DD/MM/YYYY."));
-                    }
-
-                    epochStart = startDateParsed.ToUnixTimeSeconds();
-                    epochEnd = endDateParsed.AddHours(23).AddMinutes(59).AddSeconds(59).ToUnixTimeSeconds();
-                }
-                else
-                {
-                    epochStart = timeframe switch
-                    {
-                        1 => currentEpoch - 86400,   
-                        2 => currentEpoch - 604800,    
-                        3 => currentEpoch - 2592000,       
-                        _ => currentEpoch - 86400
-                    };
-                    epochEnd = currentEpoch;
-                }
+                    1 => currentEpoch - 86400,  
+                    2 => currentEpoch - 604800, 
+                    3 => currentEpoch - 2592000, 
+                    _ => currentEpoch - 86400
+                };
+                long epochEnd = currentEpoch;
 
                 var recentReports = await _context.LabUserReports
                     .Where(r => r.LabId == labId && r.EpochTime >= epochStart && r.EpochTime <= epochEnd)
                     .ToListAsync();
 
                 if (!recentReports.Any())
-                    return NotFound(ApiResponseFactory.Fail("No reports found for the selected timeframe or date range."));
+                {
+                    _logger.LogWarning("Notification retrieval failed: No reports found for Lab ID {LabId}.", labId);
+                    return NotFound(ApiResponseFactory.Fail("No reports found in the selected timeframe."));
+                }
 
                 var reportIds = recentReports.Select(r => r.Id).ToList();
                 var userReports = await _context.UserReports
@@ -771,27 +735,28 @@ namespace HFiles_Backend.API.Controllers.Labs
                     .Select(ud => ud.user_firstname)
                     .FirstOrDefaultAsync() ?? "Unknown Admin";
 
-				var notifications = userReports
-	                 .Select(ur =>
-	                 {
-		                 var labReport = recentReports.FirstOrDefault(lr => lr.Id == ur.LabUserReportId);
+                var notifications = userReports
+                    .Select(ur =>
+                    {
+                        var labReport = recentReports.FirstOrDefault(lr => lr.Id == ur.LabUserReportId);
+                        return new
+                        {
+                            ReportType = ReverseReportTypeMapping(ur.ReportId),
+                            SentTo = userDetailsDict.TryGetValue(ur.UserId, out var userName) ? userName : "Unknown User",
+                            SentBy = labAdminUser,
+                            ElapsedMinutes = labReport != null ? (currentEpoch - labReport.EpochTime) / 60 : int.MaxValue
+                        };
+                    })
+                    .OrderBy(n => n.ElapsedMinutes)
+                    .ToList();
 
-		                 return new
-		                 {
-			                 ReportType = ReverseReportTypeMapping(ur.ReportId),
-			                 SentTo = userDetailsDict.TryGetValue(ur.UserId, out var userName) ? userName : "Unknown User",
-			                 SentBy = labAdminUser,
-			                 ElapsedMinutes = labReport != null ? (currentEpoch - labReport.EpochTime) / 60 : int.MaxValue
-		                 };
-	                 })
-	                 .OrderBy(n => n.ElapsedMinutes)
-	                 .ToList();
+                _logger.LogInformation("Notifications fetched successfully for Lab ID {LabId}. Total Notifications: {NotificationCount}", labId, notifications.Count);
 
-
-				return Ok(ApiResponseFactory.Success(notifications, "Notifications fetched successfully."));
+                return Ok(ApiResponseFactory.Success(notifications, "Notifications fetched successfully."));
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Notification retrieval failed due to an unexpected error.");
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
