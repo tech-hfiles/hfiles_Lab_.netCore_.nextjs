@@ -37,12 +37,16 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
 
-            _logger.LogInformation("Received lab signup request for Lab Name: {LabName}, Email: {Email}", dto.LabName, dto.Email);
+            _logger.LogInformation("Signup attempt initiated for Email: {Email}", dto.Email);
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                _logger.LogWarning("Model validation failed for Email: {Email}. Errors: {Errors}", dto.Email, string.Join(", ", errors));
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
@@ -50,7 +54,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 if (await _context.LabSignups.AnyAsync(u => u.Email == dto.Email))
                 {
-                    _logger.LogWarning("Lab signup failed: Email {Email} already registered.", dto.Email);
+                    _logger.LogWarning("Signup failed: Email already registered - {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Email already registered."));
                 }
 
@@ -61,24 +65,25 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 if (otpEntry == null)
                 {
-                    _logger.LogWarning("Lab signup failed: No OTP found for Email {Email}.", dto.Email);
+                    _logger.LogWarning("Signup failed: OTP not found for Email: {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("OTP not generated for this email."));
                 }
 
                 if (otpEntry.ExpiryTime < DateTime.UtcNow)
                 {
-                    _logger.LogWarning("Lab signup failed: OTP expired for Email {Email}.", dto.Email);
+                    _logger.LogWarning("Signup failed: OTP expired for Email: {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("OTP has expired."));
                 }
 
                 if (otpEntry.OtpCode != dto.Otp)
                 {
-                    _logger.LogWarning("Lab signup failed: Invalid OTP entered for Email {Email}.", dto.Email);
+                    _logger.LogWarning("Signup failed: Invalid OTP entered for Email: {Email}", dto.Email);
                     return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
                 }
 
                 const string HFilesEmail = "hfilessocial@gmail.com";
                 const string HFIDPrefix = "HF";
+
                 var epochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 var last6Epoch = epochTime % 1000000;
                 var labPrefix = dto.LabName.Length >= 3 ? dto.LabName.Substring(0, 3).ToUpper() : dto.LabName.ToUpper();
@@ -93,26 +98,52 @@ namespace HFiles_Backend.API.Controllers.Labs
                     Pincode = dto.Pincode,
                     CreatedAtEpoch = epochTime,
                     HFID = hfid,
-                    IsSuperAdmin = false,
-                    PasswordHash = _passwordHasher.HashPassword(null!, dto.Password)
+                    IsSuperAdmin = false
                 };
+
+                user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
                 _context.LabSignups.Add(user);
                 _context.LabOtpEntries.Remove(otpEntry);
-
                 await _context.SaveChangesAsync();
 
-                HttpContext.Items["CreatedLabId"] = user.Id;
-                _logger.LogInformation("Lab signup successful. Lab ID: {LabId}, HFID: {HFID}", user.Id, hfid);
+                _logger.LogInformation("New lab user registered successfully. Email: {Email}, HFID: {HFID}", dto.Email, hfid);
 
-                await _emailService.SendEmailAsync(dto.Email, "Hfiles Registration Received", $@"<html>...</html>");
-                await _emailService.SendEmailAsync(HFilesEmail, "New Lab Signup", $@"<html>...</html>");
+                var userEmailBody = $@" 
+                            <html>
+                            <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
+                                <p>Hello <strong>{dto.LabName}</strong>,</p>
+                                <p>Welcome to <strong>Hfiles</strong>!</p>
+                                <p>Your registration has been successfully received. You will be contacted for further steps regarding your login. A representative from Hfiles will reach out to you soon.</p>
+                                <p>If you have any questions, feel free to contact us at <a href='mailto:contact@hfiles.in'>contact@hfiles.in</a>.</p>
+                                <p>Best regards,<br/> The Hfiles Team</p>
+                                <p style='font-size: 0.85em; color: #888;'>If you did not sign up for Hfiles, please ignore this email.</p>
+                            </body>
+                            </html>";
 
-                return Ok(ApiResponseFactory.Success(new { user.IsSuperAdmin }, "User registered successfully."));
+                var adminEmailBody = $@" 
+                            <html>
+                            <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
+                                <h2>New Lab Signup Received</h2>
+                                <p><strong>Lab Name:</strong> {dto.LabName}<br/>
+                                <strong>Email:</strong> {dto.Email}<br/>
+                                <strong>Phone:</strong> {dto.PhoneNumber}<br/>
+                                <strong>Pincode:</strong> {dto.Pincode}</p>
+                                <p>Please follow up with the lab for onboarding.</p>
+                                <p>— Hfiles System</p>
+                            </body>
+                            </html>";
+
+                await _emailService.SendEmailAsync(dto.Email, "Hfiles Registration Received", userEmailBody);
+                await _emailService.SendEmailAsync(HFilesEmail, "New Lab Signup", adminEmailBody);
+
+                _logger.LogInformation("Welcome and admin emails sent for Email: {Email}", dto.Email);
+
+                return Ok(ApiResponseFactory.Success(new { IsSuperAdmin = user.IsSuperAdmin }, "User registered successfully."));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Lab signup failed due to an unexpected error for Email {Email}", dto.Email);
+                _logger.LogError(ex, "Unexpected error during Signup for Email: {Email}", dto.Email);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
@@ -128,71 +159,41 @@ namespace HFiles_Backend.API.Controllers.Labs
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
 
-            _logger.LogInformation("Received profile update request for Lab ID: {LabId}", dto.Id);
+            _logger.LogInformation("UpdateLabUserProfile started for LabUserId: {Id}", dto.Id);
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
-                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                var errors = ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage)
+                    .ToList();
+
+                _logger.LogWarning("Model validation failed for LabUserId: {Id}. Errors: {Errors}", dto.Id, string.Join(", ", errors));
                 return BadRequest(ApiResponseFactory.Fail(errors));
             }
 
             try
             {
-                var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                if (labIdClaim == null || !int.TryParse(labIdClaim.Value, out int labId))
-                {
-                    _logger.LogWarning("Promotion failed: Invalid or missing lab ID in token.");
-                    return Unauthorized(ApiResponseFactory.Fail("Invalid or missing labId in token."));
-                }
-
-                if (!await _labAuthorizationService.IsLabAuthorized(labId, User))
-                {
-                    _logger.LogWarning("Branch creation failed: Lab ID {LabId} is not authorized.", labId);
-                    return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only create/modify/delete data for your main lab or its branches."));
-                }
-
-                var loggedInLab = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == labId);
-                if (loggedInLab == null)
-                {
-                    _logger.LogWarning("Promotion failed: Lab ID {LabId} not found.", labId);
-                    return BadRequest(ApiResponseFactory.Fail("Lab not found"));
-                }
-
-                int mainLabId = loggedInLab.LabReference == 0 ? labId : loggedInLab.LabReference;
-
-                var branchIds = await _context.LabSignups
-                    .Where(l => l.LabReference == mainLabId)
-                    .Select(l => l.Id)
-                    .ToListAsync();
-
-                branchIds.Add(mainLabId);
-
-                var user = await _context.LabSignups
-                    .Where(l => (branchIds.Contains(l.Id) || l.Id == mainLabId) && l.Id == dto.Id && l.DeletedBy == 0) 
-                    .FirstOrDefaultAsync();
+                var user = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id);
                 if (user == null)
                 {
-                    _logger.LogWarning("Profile update failed: Lab user with ID {LabId} not found.", dto.Id);
+                    _logger.LogWarning("Lab user not found for ID: {Id}", dto.Id);
                     return NotFound(ApiResponseFactory.Fail($"Lab user with ID {dto.Id} not found."));
                 }
 
                 if (!string.IsNullOrEmpty(dto.Address))
                 {
-                    _logger.LogInformation("Updating address for Lab ID {LabId}.", dto.Id);
                     user.Address = dto.Address;
+                    _logger.LogInformation("Updated address for LabUserId: {Id}", dto.Id);
                 }
 
                 if (ProfilePhoto != null && ProfilePhoto.Length > 0)
                 {
-                    _logger.LogInformation("Received new profile photo for Lab ID {LabId}. Processing upload.", dto.Id);
-
                     string uploadsFolder = Path.Combine("wwwroot", "uploads");
                     Directory.CreateDirectory(uploadsFolder);
 
                     DateTime createdAt = DateTimeOffset.FromUnixTimeSeconds(user.CreatedAtEpoch).UtcDateTime;
                     string formattedTime = createdAt.ToString("dd-MM-yyyy-HH-mm-ss");
-
                     string fileName = $"{Path.GetFileNameWithoutExtension(ProfilePhoto.FileName)}_{formattedTime}{Path.GetExtension(ProfilePhoto.FileName)}";
                     string filePath = Path.Combine(uploadsFolder, fileName);
 
@@ -201,14 +202,14 @@ namespace HFiles_Backend.API.Controllers.Labs
                         await ProfilePhoto.CopyToAsync(stream);
                     }
 
-                    _logger.LogInformation("Profile photo uploaded successfully for Lab ID {LabId}. File Name: {FileName}", dto.Id, fileName);
                     user.ProfilePhoto = fileName;
+                    _logger.LogInformation("Profile photo updated for LabUserId: {Id}. File saved: {FileName}", dto.Id, fileName);
                 }
 
                 _context.LabSignups.Update(user);
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Profile updated successfully for Lab ID {LabId}. Returning response.", dto.Id);
+                _logger.LogInformation("Profile update completed successfully for LabUserId: {Id}", dto.Id);
 
                 return Ok(ApiResponseFactory.Success(new
                 {
@@ -219,7 +220,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Profile update failed due to an unexpected error for Lab ID {LabId}", dto.Id);
+                _logger.LogError(ex, "Unexpected error occurred while updating profile for LabUserId: {Id}", dto.Id);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
