@@ -1,9 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using HFiles_Backend.Domain.Entities.Labs;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
+﻿using HFiles_Backend.Domain.Entities.Labs;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.Infrastructure.Data
 {
@@ -15,7 +11,7 @@ namespace HFiles_Backend.Infrastructure.Data
         public DbSet<LabSignup> LabSignups { get; set; }
         public DbSet<LabOtpEntry> LabOtpEntries { get; set; }
 
-        
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

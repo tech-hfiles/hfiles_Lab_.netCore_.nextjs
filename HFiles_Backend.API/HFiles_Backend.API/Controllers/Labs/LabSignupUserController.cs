@@ -1,14 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using HFiles_Backend.Infrastructure.Data;
-using HFiles_Backend.API.Services;
-using System.Threading.Tasks;
-using System.Linq;
+﻿using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
+using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
-using HFiles_Backend.Application.Common;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -19,13 +17,17 @@ namespace HFiles_Backend.API.Controllers.Labs
         IPasswordHasher<LabSignup> passwordHasher,
         EmailService emailService,
         ILogger<LabSignupUserController> logger,
-        LabAuthorizationService labAuthorizationService) : ControllerBase
+        LabAuthorizationService labAuthorizationService,
+        IWebHostEnvironment env,
+        S3StorageService s3Service) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly IPasswordHasher<LabSignup> _passwordHasher = passwordHasher;
         private readonly EmailService _emailService = emailService;
         private readonly ILogger<LabSignupUserController> _logger = logger;
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
+        private readonly IWebHostEnvironment _env = env;
+        private readonly S3StorageService _s3Service = s3Service;
 
 
 
@@ -139,7 +141,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 _logger.LogInformation("Welcome and admin emails sent for Email: {Email}", dto.Email);
 
-                return Ok(ApiResponseFactory.Success(new { IsSuperAdmin = user.IsSuperAdmin }, "User registered successfully."));
+                return Ok(ApiResponseFactory.Success(new { user.IsSuperAdmin }, "User registered successfully."));
             }
             catch (Exception ex)
             {
@@ -189,20 +191,26 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 if (ProfilePhoto != null && ProfilePhoto.Length > 0)
                 {
-                    string uploadsFolder = Path.Combine("wwwroot", "uploads");
-                    Directory.CreateDirectory(uploadsFolder);
+                    string tempFolder = Path.Combine(_env.WebRootPath ?? "wwwroot", "temp-profiles");
+                    if (!Directory.Exists(tempFolder)) Directory.CreateDirectory(tempFolder);
 
                     DateTime createdAt = DateTimeOffset.FromUnixTimeSeconds(user.CreatedAtEpoch).UtcDateTime;
-                    string formattedTime = createdAt.ToString("dd-MM-yyyy-HH-mm-ss");
+                    string formattedTime = createdAt.ToString("dd-MM-yyyy_HH-mm-ss");
                     string fileName = $"{Path.GetFileNameWithoutExtension(ProfilePhoto.FileName)}_{formattedTime}{Path.GetExtension(ProfilePhoto.FileName)}";
-                    string filePath = Path.Combine(uploadsFolder, fileName);
 
-                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    var tempFilePath = Path.Combine(tempFolder, fileName);
+
+                    using (var stream = new FileStream(tempFilePath, FileMode.Create))
                     {
                         await ProfilePhoto.CopyToAsync(stream);
                     }
 
-                    user.ProfilePhoto = fileName;
+                    var s3Key = $"profiles/{fileName}";
+                    var s3Url = await _s3Service.UploadFileToS3(tempFilePath, s3Key);
+
+                    if (System.IO.File.Exists(tempFilePath)) System.IO.File.Delete(tempFilePath);
+
+                    user.ProfilePhoto = s3Url;
                     _logger.LogInformation("Profile photo updated for LabUserId: {Id}. File saved: {FileName}", dto.Id, fileName);
                 }
 

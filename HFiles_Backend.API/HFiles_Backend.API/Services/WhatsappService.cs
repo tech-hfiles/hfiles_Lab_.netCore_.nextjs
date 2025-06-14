@@ -1,9 +1,5 @@
-﻿using System.Net.Http;
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
 namespace HFiles_Backend.API.Services

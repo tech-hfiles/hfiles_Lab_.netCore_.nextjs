@@ -1,15 +1,11 @@
-﻿using HFiles_Backend.Domain.Entities;
-using HFiles_Backend.Infrastructure.Data;
+﻿using System.Security.Cryptography;
 using HFiles_Backend.API.Services;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
-using HFiles_Backend.Application.Common;
-using System.Security.Cryptography;
+using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -46,11 +42,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var otp = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
                 var now = DateTime.UtcNow;
 
-                var expiredOtps = await _context.LabOtpEntries
-                    .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
-                    .ToListAsync();
-                _context.LabOtpEntries.RemoveRange(expiredOtps);
-
                 var otpEntry = new LabOtpEntry
                 {
                     Email = dto.Email,
@@ -60,6 +51,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                 };
 
                 _context.LabOtpEntries.Add(otpEntry);
+                await _context.SaveChangesAsync();
+
+                var expiredOtps = await _context.LabOtpEntries
+                   .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
+                   .ToListAsync();
+                _context.LabOtpEntries.RemoveRange(expiredOtps);
+                _context.LabOtpEntries.Remove(otpEntry);
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("OTP generated for Email {Email}. OTP: {Otp}, Expiry Time: {ExpiryTime}", dto.Email, otp, otpEntry.ExpiryTime);

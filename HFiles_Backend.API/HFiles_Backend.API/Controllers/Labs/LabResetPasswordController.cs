@@ -1,15 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+﻿using System.Security.Cryptography;
 using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
-using Microsoft.AspNetCore.Identity;
-using System.Linq;
-using System.Threading.Tasks;
 using HFiles_Backend.Infrastructure.Data;
-using HFiles_Backend.Application.Common;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Cryptography;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -409,6 +406,69 @@ namespace HFiles_Backend.API.Controllers.Labs
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Password reset request failed due to an unexpected error for Email {Email}", dto.Email);
+                return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
+            }
+        }
+
+
+
+
+
+        // Verify OTP for password reset
+        [HttpPost("labs/password-reset/verify/otp")]
+        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto)
+        {
+            HttpContext.Items["Log-Category"] = "Authentication";
+
+            _logger.LogInformation("Received OTP verification request for Email: {Email}", dto.Email);
+
+            if (!ModelState.IsValid)
+            {
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
+                _logger.LogWarning("Validation failed: {@Errors}", errors);
+                return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            try
+            {
+                var now = DateTime.UtcNow;
+
+                var otpEntry = await _context.LabOtpEntries
+                    .Where(o => o.Email == dto.Email)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (otpEntry == null)
+                {
+                    _logger.LogWarning("OTP verification failed: No OTP entry found for Email {Email}", dto.Email);
+                    return BadRequest(ApiResponseFactory.Fail("OTP expired or not found."));
+                }
+
+                if (otpEntry.ExpiryTime < DateTime.UtcNow)
+                {
+                    _logger.LogWarning("OTP verification failed: OTP expired for Email {Email}", dto.Email);
+                    return BadRequest(ApiResponseFactory.Fail("OTP expired."));
+                }
+
+                if (otpEntry.OtpCode != dto.Otp)
+                {
+                    _logger.LogWarning("OTP verification failed: Invalid OTP provided for Email {Email}", dto.Email);
+                    return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
+                }
+
+                var expiredOtps = await _context.LabOtpEntries
+                 .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
+                 .ToListAsync();
+                _context.LabOtpEntries.RemoveRange(expiredOtps);
+                _context.LabOtpEntries.Remove(otpEntry);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation("OTP verification successful for Email {Email}", dto.Email);
+                return Ok(ApiResponseFactory.Success("OTP successfully verified."));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OTP verification failed due to an unexpected error for Email {Email}", dto.Email);
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }

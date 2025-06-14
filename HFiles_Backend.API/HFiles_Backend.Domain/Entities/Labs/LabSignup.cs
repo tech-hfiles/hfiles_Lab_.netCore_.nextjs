@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
@@ -39,6 +34,6 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public int DeletedBy { get; set; } = 0;
 
         [Required]
-        public long CreatedAtEpoch { get; set; } 
+        public long CreatedAtEpoch { get; set; }
     }
 }

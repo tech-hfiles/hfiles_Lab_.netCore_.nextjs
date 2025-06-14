@@ -1,17 +1,15 @@
-﻿using HFiles_Backend.API.Services;
+﻿using System.Text;
+using HFiles_Backend.API.Middleware;
+using HFiles_Backend.API.Services;
+using HFiles_Backend.API.Settings;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using DotNetEnv;
-using MySqlConnector;
-using HFiles_Backend.API.Settings;
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.OpenApi.Models;
-using HFiles_Backend.API.Middleware;
+using MySqlConnector;
 using Serilog;
 
 // Configure Serilog at the top
@@ -98,7 +96,7 @@ try
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-    builder.Services.AddLogging(); 
+    builder.Services.AddLogging();
 
     // Swagger + JWT
     builder.Services.AddSwaggerGen(options =>
@@ -137,6 +135,8 @@ try
     builder.Services.AddHttpClient<IWhatsappService, WhatsappService>();
     builder.Services.AddScoped<LabAuthorizationService>();
     builder.Services.AddScoped<LocationService>();
+    builder.Services.AddScoped<S3StorageService>();
+
 
     // DbContext
     builder.Services.AddDbContext<AppDbContext>(options =>
@@ -209,12 +209,12 @@ try
     app.UseHttpsRedirection();
     app.UseStaticFiles();
 
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new PhysicalFileProvider(
-            Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads")),
-        RequestPath = "/uploads"
-    });
+    //app.UseStaticFiles(new StaticFileOptions
+    //{
+    //    FileProvider = new PhysicalFileProvider(
+    //        Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "uploads")),
+    //    RequestPath = "/uploads"
+    //});
 
     app.UseRouting();
 
@@ -223,11 +223,10 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
-    app.MapControllers(); 
-
     app.UseMiddleware<ExceptionLoggingMiddleware>();
     app.UseMiddleware<ApiLoggingMiddleware>();
 
+    app.MapControllers();
     app.Run();
 
 
@@ -238,5 +237,5 @@ catch (Exception ex)
 }
 finally
 {
-    Log.CloseAndFlush(); 
+    Log.CloseAndFlush();
 }

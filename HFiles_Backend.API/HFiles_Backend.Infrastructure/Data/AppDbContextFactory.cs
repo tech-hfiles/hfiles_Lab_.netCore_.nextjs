@@ -1,7 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
-using DotNetEnv;
-using System;
 
 namespace HFiles_Backend.Infrastructure.Data
 {

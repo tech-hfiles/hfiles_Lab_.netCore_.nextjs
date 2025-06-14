@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
@@ -13,10 +8,10 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public int Id { get; set; }
 
         [Required]
-        public int UserId { get; set; } 
+        public int UserId { get; set; }
 
         [Required]
-        public int LabId { get; set; } 
+        public int LabId { get; set; }
 
         [Required]
         public string? PasswordHash { get; set; }
@@ -25,6 +20,6 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public long EpochTime { get; set; }
 
         [Required]
-        public int IsMain { get; set; } = 1; 
+        public int IsMain { get; set; } = 1;
     }
 }

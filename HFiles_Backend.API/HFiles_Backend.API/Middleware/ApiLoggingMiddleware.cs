@@ -1,19 +1,11 @@
 ﻿using System.Data;
 using System.Text;
-using System.Text.Json;
 using HFiles_Backend.API.DTOs.Labs;
-using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
-using HFilesBackend.Infrastructure.Migrations;
-using Humanizer;
-using iText.Commons.Actions.Contexts;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using static iText.IO.Util.IntHashtable;
 
 namespace HFiles_Backend.API.Middleware
 {
@@ -30,12 +22,12 @@ namespace HFiles_Backend.API.Middleware
             try
             {
                 context.Request.EnableBuffering();
-                context.Request.Body.Position = 0; 
+                context.Request.Body.Position = 0;
 
                 using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
                 var body = await reader.ReadToEndAsync();
 
-                context.Request.Body.Position = 0; 
+                context.Request.Body.Position = 0;
 
                 return string.IsNullOrWhiteSpace(body) ? "No payload or request body was already read" : body;
             }
@@ -74,7 +66,14 @@ namespace HFiles_Backend.API.Middleware
             string? role = "Not Assigned Yet", sessionId = "Not Generated Yet";
             string requestUrl = context.Request.Path.Value ?? "Unknown";
             string requestMethod = context.Request.Method ?? "Unknown";
-            string ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+            string ipAddress = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "Unknown";
+
+            _logger.LogInformation("Incoming request from IP: {IP}", ipAddress);
+
+
+
 
             context.Request.EnableBuffering();
             string requestBody = await GetRequestBody(context);
@@ -201,7 +200,7 @@ namespace HFiles_Backend.API.Middleware
 
                 try
                 {
-                    var labLoginDto = JsonConvert.DeserializeObject<EmailRequest>(requestBody);
+                    var labLoginDto = JsonConvert.DeserializeObject<LoginOtpRequest>(requestBody);
                     if (labLoginDto != null)
                     {
                         var lab = await dbContext.LabSignups.FirstOrDefaultAsync(l => l.Email == labLoginDto.Email);
@@ -460,19 +459,19 @@ namespace HFiles_Backend.API.Middleware
                     if (memberId > 0)
                     {
 
-                            var member = await dbContext.LabMembers.AsNoTracking()
-                                .FirstOrDefaultAsync(m => m.Id == memberId && m.DeletedBy != 0);
+                        var member = await dbContext.LabMembers.AsNoTracking()
+                            .FirstOrDefaultAsync(m => m.Id == memberId && m.DeletedBy != 0);
 
-                            if (member is not null)
-                            {
-                                branchId = member.LabId != labId ? member.LabId : 0;
-                                _logger.LogInformation("Mapped Lab ID {LabId} to Branch ID {BranchId} based on Member ID {MemberId}.", member.LabId, branchId, memberId);
-                            }
-                            else
-                            {
-                                _logger.LogWarning("Member ID {MemberId} not found or already deleted. Defaulting Branch ID to 0.", memberId);
-                                branchId = 0;
-                            }
+                        if (member is not null)
+                        {
+                            branchId = member.LabId != labId ? member.LabId : 0;
+                            _logger.LogInformation("Mapped Lab ID {LabId} to Branch ID {BranchId} based on Member ID {MemberId}.", member.LabId, branchId, memberId);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Member ID {MemberId} not found or already deleted. Defaulting Branch ID to 0.", memberId);
+                            branchId = 0;
+                        }
                     }
 
                     branchId = branchId.HasValue && double.IsNaN(branchId.Value) ? 0 : branchId.GetValueOrDefault(0);
@@ -770,7 +769,7 @@ namespace HFiles_Backend.API.Middleware
 
 
             // Extract LabId from Create Lab API
-            else if (context.Request.Path.Value?.Equals("labs", StringComparison.OrdinalIgnoreCase) == true) 
+            else if (context.Request.Path.Value?.Equals("labs", StringComparison.OrdinalIgnoreCase) == true)
             {
                 _logger.LogInformation("Creating Lab API detected. Extracting lab details from request body.");
                 try
@@ -795,8 +794,8 @@ namespace HFiles_Backend.API.Middleware
                     _logger.LogError(ex, "Failed to extract Lab details from Create Lab request.");
                 }
             }
-                      
-           
+
+
 
 
             // By Default : Extract LabId, UserId, Role and SessionId from Token
@@ -815,7 +814,7 @@ namespace HFiles_Backend.API.Middleware
             }
 
             var allowedStatusCodes = new[] { StatusCodes.Status200OK, StatusCodes.Status202Accepted };
-            if (allowedStatusCodes.Contains(context.Response.StatusCode))
+            if (allowedStatusCodes.Contains(context.Response.StatusCode) && context.Request.Method != HttpMethods.Get)
             {
                 _logger.LogInformation("API Call Logged Successfully - URL: {RequestUrl}, Method: {RequestMethod}, Status: {StatusCode}",
                     requestUrl, requestMethod, context.Response.StatusCode);
@@ -995,9 +994,13 @@ namespace HFiles_Backend.API.Middleware
 
 
                 // Logging if Resend Reports API is hit
+                // Logging if Resend Reports API is hit
                 if (context.Request?.Path.Value?.Contains("labs/reports/resend", StringComparison.OrdinalIgnoreCase) == true)
                 {
                     _logger.LogInformation("Intercepted ResendReports API for audit logging.");
+                    var tempLogs = new Dictionary<long, LabAuditLog>();
+                    var logs = new List<LabAuditLog>();
+
                     try
                     {
                         var parsedBody = JsonConvert.DeserializeObject<ResendReport>(requestBody);
@@ -1007,7 +1010,6 @@ namespace HFiles_Backend.API.Middleware
                             await _next(context);
                             return;
                         }
-                        var logs = new List<LabAuditLog>();
 
                         foreach (var id in parsedBody.Ids)
                         {
@@ -1024,7 +1026,7 @@ namespace HFiles_Backend.API.Middleware
                                 continue;
                             }
 
-                            logs.Add(new LabAuditLog
+                            var log = new LabAuditLog
                             {
                                 EntityName = "LabUserReports",
                                 LabId = labId,
@@ -1038,43 +1040,78 @@ namespace HFiles_Backend.API.Middleware
                                 Url = requestUrl,
                                 HttpMethod = requestMethod,
                                 Category = context.Items.ContainsKey("Log-Category") ? context.Items["Log-Category"]?.ToString() ?? "General" : "General"
-                            });
-                        }
+                            };
 
-                        if (logs.Count > 0)
-                        {
-                            await dbContext.LabAuditLogs.AddRangeAsync(logs);
-                            await dbContext.SaveChangesAsync();
-                            _logger.LogInformation("Audit logs recorded for {Count} resend operations.", logs.Count);
+                            tempLogs[id] = log;
                         }
-                        return;
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to process ResendReports API for logging.");
+                        _logger.LogWarning(ex, "Error while processing request payload for audit logging.");
                     }
+
+                    try
+                    {
+                        if (context.Items.TryGetValue("PerReportLogs", out var responseLogObj) &&
+                            responseLogObj is List<NotificationResponse> responseLogs)
+                        {
+                            foreach (var logEntry in responseLogs)
+                            {
+                                if (tempLogs.TryGetValue(logEntry.LabUserReportId, out var auditLog))
+                                {
+                                    var reportName = logEntry.ResendReportName ?? "Unknown";
+                                    var reportType = logEntry.ResendReportType ?? "Unknown";
+
+                                    var statusMsg = logEntry.Success
+                                        ? $" ✅ Resend successful for Report: {reportName} [{reportType}]."
+                                        : $" ❌ Resend failed. Reason: {logEntry.Reason}.";
+
+                                    auditLog.Notifications += statusMsg;
+                                    auditLog.Details += JsonConvert.SerializeObject(logEntry, Formatting.None);
+                                    logs.Add(auditLog);
+                                }
+                            }
+
+                            if (logs.Count > 0)
+                            {
+                                await dbContext.LabAuditLogs.AddRangeAsync(logs);
+                                await dbContext.SaveChangesAsync();
+                                _logger.LogInformation("Audit logs recorded for {Count} resend operations.", logs.Count);
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning("No response data found to complete resend audit log details.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error while processing response for resend audit logging.");
+                    }
+
+                    return;
                 }
 
 
 
 
 
-                    // Default fallback for other endpoints
-                    var apiLog = new LabAuditLog
-                    {
-                        EntityName = context.Request?.RouteValues["controller"]?.ToString() ?? "Unknown",
-                        LabId = labId,
-                        UserId = userId,
-                        UserRole = role,
-                        BranchId = branchId,
-                        Details = $"Request to {requestUrl} with method {requestMethod}. Payload: {requestBody}",
-                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                        IpAddress = ipAddress,
-                        SessionId = sessionId,
-                        Url = requestUrl,
-                        HttpMethod = requestMethod,
-                        Category = context.Items.ContainsKey("Log-Category") ? context.Items["Log-Category"]?.ToString() ?? "General" : "General"
-                    };
+                // Default fallback for other endpoints
+                var apiLog = new LabAuditLog
+                {
+                    EntityName = context.Request?.RouteValues["controller"]?.ToString() ?? "Unknown",
+                    LabId = labId,
+                    UserId = userId,
+                    UserRole = role,
+                    BranchId = branchId,
+                    Details = $"Request to {requestUrl} with method {requestMethod}. Payload: {requestBody}",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    IpAddress = ipAddress,
+                    SessionId = sessionId,
+                    Url = requestUrl,
+                    HttpMethod = requestMethod,
+                    Category = context.Items.ContainsKey("Log-Category") ? context.Items["Log-Category"]?.ToString() ?? "General" : "General"
+                };
 
                 dbContext.LabAuditLogs.Add(apiLog);
                 await dbContext.SaveChangesAsync();

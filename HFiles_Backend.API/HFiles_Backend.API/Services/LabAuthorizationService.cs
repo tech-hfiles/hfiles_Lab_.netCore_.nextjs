@@ -1,7 +1,6 @@
 ﻿using System.Security.Claims;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace HFiles_Backend.API.Services
 {

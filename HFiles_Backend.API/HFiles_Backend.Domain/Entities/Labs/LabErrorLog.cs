@@ -1,28 +1,22 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace HFiles_Backend.Domain.Entities.Labs
+﻿namespace HFiles_Backend.Domain.Entities.Labs
 {
     public class LabErrorLog
     {
         public int Id { get; set; }
         public int? LabId { get; set; }
         public int? UserId { get; set; }
-        public string? UserRole { get; set; } 
-        public string? EntityName { get; set; } 
-        public int? EntityId { get; set; } 
+        public string? UserRole { get; set; }
+        public string? EntityName { get; set; }
+        public int? EntityId { get; set; }
         public string? Action { get; set; }
-        public string? ErrorMessage { get; set; } 
+        public string? ErrorMessage { get; set; }
         public string? StackTrace { get; set; }
-        public long? Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); 
+        public long? Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         public string? IpAddress { get; set; }
         public string? SessionId { get; set; }
-        public string? Url { get; set; } 
-        public string? HttpMethod { get; set; } 
-        public string? Category { get; set; } 
+        public string? Url { get; set; }
+        public string? HttpMethod { get; set; }
+        public string? Category { get; set; }
     }
 
 

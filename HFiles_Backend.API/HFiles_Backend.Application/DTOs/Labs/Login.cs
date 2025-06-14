@@ -7,17 +7,22 @@ using System.Threading.Tasks;
 
 namespace HFiles_Backend.Application.DTOs.Labs
 {
-    public class EmailRequest
+    public class LoginOtpRequest
     {
-        [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Invalid email address.")]
-        public string Email { get; set; } = null!;
+        public string? Email { get; set; } 
+
+        [Phone(ErrorMessage = "Invalid phone number.")]
+        public string? PhoneNumber { get; set; } 
     }
+
     public class OtpLogin
     {
-        [Required(ErrorMessage = "Email is required.")]
         [EmailAddress(ErrorMessage = "Invalid email address.")]
-        public string Email { get; set; } = null!;
+        public string? Email { get; set; } 
+
+        [Phone(ErrorMessage = "Invalid phone number.")]
+        public string? PhoneNumber { get; set; }
 
         [Required(ErrorMessage = "OTP is required.")]
         public string Otp { get; set; } = null!;

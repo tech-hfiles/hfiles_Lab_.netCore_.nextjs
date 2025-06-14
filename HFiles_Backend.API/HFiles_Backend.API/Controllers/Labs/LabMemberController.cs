@@ -1,14 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using HFiles_Backend.Infrastructure.Data;
-using HFiles_Backend.Domain.Entities.Labs;
-using HFiles_Backend.Application.DTOs.Labs;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authorization;
-using HFiles_Backend.API.Services;
+﻿using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
-using Microsoft.Extensions.Logging;
+using HFiles_Backend.Application.DTOs.Labs;
+using HFiles_Backend.Domain.Entities.Labs;
+using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -270,7 +268,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         // Delete member
-        [HttpDelete("labs/members/{memberId}")]
+        [HttpPut("labs/members/{memberId}")]
         [Authorize]
         public async Task<IActionResult> DeleteLabMember([FromRoute] int memberId)
         {
@@ -401,6 +399,22 @@ namespace HFiles_Backend.API.Controllers.Labs
                     {
                         m.Id,
                         m.UserId,
+                        Name = (from ud in _context.UserDetails
+                                where ud.user_id == m.UserId
+                                select ud.user_firstname + " " + ud.user_lastname)
+                                .FirstOrDefault() ?? "Username Not Found",
+                        Email = (from ud in _context.UserDetails
+                                 where ud.user_id == m.UserId
+                                 select ud.user_email)
+                                .FirstOrDefault() ?? "Email Not Found",
+                        HFID = (from ud in _context.UserDetails
+                                where ud.user_id == m.UserId
+                                select ud.user_membernumber)
+                                .FirstOrDefault() ?? "HFID Not Found",
+                        ProfilePhoto = (from ud in _context.UserDetails
+                                        where ud.user_id == m.UserId
+                                        select ud.user_image)
+                                .FirstOrDefault() ?? "No image preview available",
                         m.LabId,
                         m.Role,
                         DeletedByUser = (from sa in _context.LabSuperAdmins
@@ -409,9 +423,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                                          select ud.user_firstname + " " + ud.user_lastname)
                                          .FirstOrDefault() ??
                                          (from lm in _context.LabMembers
-                                         join ud in _context.UserDetails on lm.UserId equals ud.user_id
-                                         where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
-                                         select ud.user_firstname + " " + ud.user_lastname)
+                                          join ud in _context.UserDetails on lm.UserId equals ud.user_id
+                                          where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                          select ud.user_firstname + " " + ud.user_lastname)
                                          .FirstOrDefault(),
 
                         DeletedByUserRole = (from sa in _context.LabSuperAdmins
@@ -419,9 +433,9 @@ namespace HFiles_Backend.API.Controllers.Labs
                                              select "Super Admin")
                                              .FirstOrDefault() ??
                                              (from lm in _context.LabMembers
-                                             where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
-                                             select lm.Role)
-                                             .FirstOrDefault() ?? "Unknown"
+                                              where lm.Id == m.DeletedBy && (branchIds.Contains(m.LabId) || m.LabId == mainLabId)
+                                              select lm.Role)
+                                             .FirstOrDefault() ?? "Role Not Found"
                     })
                     .ToListAsync();
 

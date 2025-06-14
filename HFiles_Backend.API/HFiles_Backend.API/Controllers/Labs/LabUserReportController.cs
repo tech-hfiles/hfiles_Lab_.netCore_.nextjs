@@ -1,16 +1,13 @@
-﻿using HFiles_Backend.API.DTOs.Labs;
+﻿using System.Globalization;
+using HFiles_Backend.API.DTOs.Labs;
+using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
+using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
-using Newtonsoft.Json;
-using HFiles_Backend.API.Services;
-using System.Linq;
-using System.Globalization;
-using HFiles_Backend.Application.Common;
-using System.Net.Mail;
 using Sprache;
 
 
@@ -24,13 +21,16 @@ namespace HFiles_Backend.API.Controllers.Labs
     IWebHostEnvironment env,
     LabAuthorizationService labAuthorizationService,
     EmailService emailService,
-    ILogger<LabUserReportController> logger) : ControllerBase
+    ILogger<LabUserReportController> logger,
+    S3StorageService s3Service) : ControllerBase
     {
         private readonly AppDbContext _context = context;
         private readonly IWebHostEnvironment _env = env;
         private readonly LabAuthorizationService _labAuthorizationService = labAuthorizationService;
         private readonly EmailService _emailService = emailService;
         private readonly ILogger<LabUserReportController> _logger = logger;
+        private readonly S3StorageService _s3Service = s3Service;
+
 
 
         // Method to Map Report Type
@@ -112,12 +112,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail("No entries provided in the payload."));
                 }
 
-                string uploadsFolder = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads");
-                if (!Directory.Exists(uploadsFolder))
-                {
-                    Directory.CreateDirectory(uploadsFolder);
-                    _logger.LogInformation("Uploads folder created at: {Path}", uploadsFolder);
-                }
+                string tempFolder = Path.Combine(_env.WebRootPath ?? "wwwroot", "temp-reports");
+                if (!Directory.Exists(tempFolder)) Directory.CreateDirectory(tempFolder);
 
                 var entryResults = new List<object>();
                 int successfulUploads = 0;
@@ -177,12 +173,17 @@ namespace HFiles_Backend.API.Controllers.Labs
                             continue;
 
                         var fileName = $"{Path.GetFileNameWithoutExtension(file.FileName)}_{DateTime.Now:dd-MM-yyyy_HH-mm-ss}{Path.GetExtension(file.FileName)}";
-                        var filePath = Path.Combine(uploadsFolder, fileName);
+                        var tempFilePath = Path.Combine(tempFolder, fileName);
 
-                        using (var stream = new FileStream(filePath, FileMode.Create))
+                        using (var stream = new FileStream(tempFilePath, FileMode.Create))
                         {
                             await file.CopyToAsync(stream);
                         }
+
+                        var s3Key = $"reports/{fileName}";
+                        var s3Url = await _s3Service.UploadFileToS3(tempFilePath, s3Key);
+
+                        if (System.IO.File.Exists(tempFilePath)) System.IO.File.Delete(tempFilePath);
 
                         _logger.LogInformation("Saved file {FileName} for UserId: {UserId}", fileName, userId);
 
@@ -191,7 +192,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                             UserId = userId,
                             ReportName = Path.GetFileNameWithoutExtension(file.FileName),
                             MemberId = "0",
-                            ReportUrl = fileName,
+                            ReportUrl = s3Url,
                             ReportId = GetReportTypeValue(reportType),
                             IsActive = "0",
                             CreatedDate = DateTime.UtcNow,
@@ -264,12 +265,11 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
         // Fetch All Reports of Selected User
         [HttpGet("labs/reports/{userId}")]
         public async Task<IActionResult> GetLabUserReportsByUserId([FromRoute] int userId, [FromQuery] string? reportType)
         {
-            HttpContext.Items["Log-Category"] = "Lab Management";   
+            HttpContext.Items["Log-Category"] = "Lab Management";
 
             _logger.LogInformation("Received request to fetch lab user reports for UserId: {UserId}", userId);
 
@@ -668,7 +668,6 @@ namespace HFiles_Backend.API.Controllers.Labs
         public async Task<IActionResult> ResendReport([FromBody] ResendReport dto)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
-
             _logger.LogInformation("ResendReport request received with {Count} IDs", dto?.Ids?.Count ?? 0);
 
             if (!ModelState.IsValid)
@@ -723,6 +722,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var failedReports = new List<object>();
                 var resendEntries = new List<LabResendReports>();
 
+                var reportLogs = new List<NotificationResponse>();
+
                 foreach (var labUserReportId in dto.Ids)
                 {
                     var labUserReport = await _context.LabUserReports
@@ -731,13 +732,30 @@ namespace HFiles_Backend.API.Controllers.Labs
                     if (labUserReport == null || (!branchIds.Contains(labUserReport.LabId) && labUserReport.LabId != mainLabId))
                     {
                         _logger.LogWarning("LabUserReport {Id} failed validation. Not part of an authorized lab.", labUserReportId);
+
                         failedReports.Add(new
                         {
                             Id = labUserReportId,
                             Status = "Failed",
                             Reason = "LabUserReport entry not found or not part of an authorized branch."
                         });
+
+                        reportLogs.Add(new NotificationResponse
+                        {
+                            Success = false,
+                            Status = "Failed",
+                            Reason = "LabUserReport entry not found or not part of an authorized branch."
+                        });
+
                         continue;
+                    }
+
+                    var userReport = await _context.UserReports.FirstOrDefaultAsync(r => r.LabUserReportId == labUserReport.Id && r.UploadedBy == "Lab");
+
+                    if (userReport == null)
+                    {
+                        _logger.LogWarning("User Reports failed validation. Not Found with Matching LabUserReportId {Id}.", labUserReportId);
+                        return BadRequest(ApiResponseFactory.Fail("User Reports not found"));
                     }
 
                     long currentEpochTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -757,12 +775,24 @@ namespace HFiles_Backend.API.Controllers.Labs
                         LabUserReportId = labUserReportId,
                         ResendEpochTime = currentEpochTime
                     });
+
+                    reportLogs.Add(new NotificationResponse
+                    {
+                        LabUserReportId = labUserReportId,
+                        ResendReportName = userReport.ReportName,
+                        ResendReportType = ReverseReportTypeMapping(userReport.ReportId),
+                        NewResendCount = labUserReport.Resend,
+                        Success = true,
+                        Status = "Success",
+                    });
                 }
 
                 await _context.LabResendReports.AddRangeAsync(resendEntries);
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Resend operation complete. Success: {SuccessCount}, Failed: {FailedCount}", successReports.Count, failedReports.Count);
+
+                HttpContext.Items["PerReportLogs"] = reportLogs;
 
                 var result = new
                 {
@@ -791,6 +821,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 return StatusCode(500, ApiResponseFactory.Fail($"An unexpected error occurred: {ex.Message}"));
             }
         }
+
 
 
 

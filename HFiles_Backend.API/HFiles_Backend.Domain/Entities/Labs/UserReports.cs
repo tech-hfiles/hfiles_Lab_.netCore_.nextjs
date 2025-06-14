@@ -1,10 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
@@ -18,10 +13,10 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? ReportName { get; set; }
         public string? MemberId { get; set; } = "0";
         public string? ReportUrl { get; set; }
-        public int ReportId { get; set; }    
+        public int ReportId { get; set; }
         public string? IsActive { get; set; }
         public DateTime CreatedDate { get; set; }
-        public string? AccessMappingId { get; set; }  
+        public string? AccessMappingId { get; set; }
         public double FileSize { get; set; }
 
         public string? UploadType { get; set; }
@@ -30,7 +25,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         [Column("UploadedBy")]
         public string? UploadedBy { get; set; }
         public int? LabId { get; set; }
-        public int? LabUserReportId { get; set; } 
+        public int? LabUserReportId { get; set; }
 
     }
 

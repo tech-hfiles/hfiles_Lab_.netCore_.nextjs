@@ -1,11 +1,6 @@
-﻿using HFiles_Backend.Domain.Entities.Labs;
+﻿using System.Security.Claims;
+using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
-using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace HFiles_Backend.API.Middleware
 {

@@ -1,9 +1,5 @@
 ﻿using HFiles_Backend.Application.DTOs.Labs;
 using Newtonsoft.Json;
-using Microsoft.Extensions.Logging;
-using System.Net.Http;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace HFiles_Backend.API.Services
 {

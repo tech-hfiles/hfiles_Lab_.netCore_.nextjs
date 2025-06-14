@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 
 namespace HFiles_Backend.Domain.Entities.Labs
 {
@@ -16,7 +11,7 @@ namespace HFiles_Backend.Domain.Entities.Labs
         public string? user_lastname { get; set; }
         public string? user_membernumber { get; set; }
         public string? user_email { get; set; }
-        public string? user_contact {  get; set; }
+        public string? user_contact { get; set; }
         public string? user_reference { get; set; }
         public string? user_image { get; set; }
 

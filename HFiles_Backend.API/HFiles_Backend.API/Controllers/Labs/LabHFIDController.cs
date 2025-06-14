@@ -1,11 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using HFiles_Backend.Infrastructure.Data;
-using HFiles_Backend.Application.DTOs.Labs;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
-using Microsoft.AspNetCore.Authorization;
+using HFiles_Backend.Application.DTOs.Labs;
+using HFiles_Backend.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 namespace HFiles_Backend.API.Controllers.Labs
 
 {

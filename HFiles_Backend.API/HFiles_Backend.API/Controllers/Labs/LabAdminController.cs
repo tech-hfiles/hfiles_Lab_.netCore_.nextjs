@@ -1,16 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Linq;
-using System.Threading.Tasks;
-using HFiles_Backend.Domain.Entities.Labs;
+﻿using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
-using Microsoft.AspNetCore.Identity;
-using HFiles_Backend.API.Services;
+using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.IdentityModel.Tokens;
-using HFiles_Backend.Application.Common;
-using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {

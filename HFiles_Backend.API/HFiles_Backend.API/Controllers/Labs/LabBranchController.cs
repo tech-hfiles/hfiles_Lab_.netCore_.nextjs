@@ -1,15 +1,11 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
+﻿using HFiles_Backend.API.Services;
+using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
-using Newtonsoft.Json;
-using HFiles_Backend.API.Services;
-using HFiles_Backend.Application.Common;
-using System.Net.Http;
-using Org.BouncyCastle.Bcpg.Sig;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace HFiles_Backend.API.Controllers.Labs
 {
@@ -134,6 +130,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
             try
             {
+                var now = DateTime.UtcNow;
+
                 var otpEntry = await _context.LabOtpEntries
                     .Where(o => o.Email == dto.Email)
                     .OrderByDescending(o => o.CreatedAt)
@@ -157,6 +155,13 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return BadRequest(ApiResponseFactory.Fail("Invalid OTP."));
                 }
 
+                var expiredOtps = await _context.LabOtpEntries
+                  .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
+                  .ToListAsync();
+                _context.LabOtpEntries.RemoveRange(expiredOtps);
+                _context.LabOtpEntries.Remove(otpEntry);
+                await _context.SaveChangesAsync();
+
                 _logger.LogInformation("OTP verification successful for Email {Email}", dto.Email);
                 return Ok(ApiResponseFactory.Success("OTP successfully verified."));
             }
@@ -171,7 +176,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
+        // Retrieves all labs
         [HttpGet("labs")]
         [Authorize]
         public async Task<IActionResult> GetLabBranches()
@@ -269,8 +274,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-
-        [HttpDelete("labs/branches/{branchId}")]
+        // Soft Delete a Branch
+        [HttpPut("labs/branches/{branchId}")]
         [Authorize]
         public async Task<IActionResult> DeleteBranch([FromRoute] int branchId)
         {
@@ -555,8 +560,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return Unauthorized(ApiResponseFactory.Fail("Permission denied. You can only manage your main lab or its branches."));
                 }
 
-              
-                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id && (branchIds.Contains(l.Id) || l.Id == mainLabId) &&  l.DeletedBy != 0);
+
+                var branch = await _context.LabSignups.FirstOrDefaultAsync(l => l.Id == dto.Id && (branchIds.Contains(l.Id) || l.Id == mainLabId) && l.DeletedBy != 0);
 
                 if (branch == null)
                 {
@@ -577,7 +582,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
                 try
                 {
-                    branch.DeletedBy = 0; 
+                    branch.DeletedBy = 0;
 
                     _context.Update(branch);
                     await _context.SaveChangesAsync();
