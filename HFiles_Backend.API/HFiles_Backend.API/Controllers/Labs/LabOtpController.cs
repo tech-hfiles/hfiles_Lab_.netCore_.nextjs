@@ -53,13 +53,6 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _context.LabOtpEntries.Add(otpEntry);
                 await _context.SaveChangesAsync();
 
-                var expiredOtps = await _context.LabOtpEntries
-                   .Where(x => x.Email == dto.Email && x.ExpiryTime < now)
-                   .ToListAsync();
-                _context.LabOtpEntries.RemoveRange(expiredOtps);
-                _context.LabOtpEntries.Remove(otpEntry);
-                await _context.SaveChangesAsync();
-
                 _logger.LogInformation("OTP generated for Email {Email}. OTP: {Otp}, Expiry Time: {ExpiryTime}", dto.Email, otp, otpEntry.ExpiryTime);
 
                 var subject = "Complete Your Hfiles Lab Registration";

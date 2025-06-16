@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Services;
+﻿using System.Security.Claims;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
@@ -24,8 +25,8 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
         [HttpPost("labs/branches")]
-        [Authorize]
-        public async Task<IActionResult> CreateBranch([FromBody] Branch dto)
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
+        public async Task<IActionResult> CreateBranch([FromBody] Branch dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
 
@@ -36,6 +37,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
                 _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (!otpStore.Consume(dto.Email, "create_branch"))
+            {
+                _logger.LogWarning("Branch creation failed: OTP not verified or already used for Email {Email}", dto.Email);
+                return Unauthorized(ApiResponseFactory.Fail("OTP not verified or already used. Please verify again."));
             }
 
             try
@@ -114,8 +121,9 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Verify Branch OTP
         [HttpPost("labs/branches/verify/otp")]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         [Authorize]
-        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto)
+        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
 
@@ -161,6 +169,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
                 await _context.SaveChangesAsync();
+
+                otpStore.StoreVerifiedOtp(dto.Email, "create_branch");
 
                 _logger.LogInformation("OTP verification successful for Email {Email}", dto.Email);
                 return Ok(ApiResponseFactory.Success("OTP successfully verified."));
@@ -276,7 +286,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Soft Delete a Branch
         [HttpPut("labs/branches/{branchId}")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminPolicy")]
         public async Task<IActionResult> DeleteBranch([FromRoute] int branchId)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
@@ -288,7 +298,7 @@ namespace HFiles_Backend.API.Controllers.Labs
             {
                 var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
                 var labIdClaim = User.Claims.FirstOrDefault(c => c.Type == "UserId");
-                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (roleClaim?.Value == "Admin" || roleClaim?.Value == "Member")
                 {
@@ -505,7 +515,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Revert Branches
         [HttpPatch("labs/revert-branch")]
-        [Authorize]
+        [Authorize (Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> RevertDeletedBranch([FromBody] RevertBranch dto)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
@@ -522,7 +532,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 var revertedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (revertedByIdClaim == null || revertedByIdClaim == null ||
                     !int.TryParse(revertedByIdClaim.Value, out int revertedById))

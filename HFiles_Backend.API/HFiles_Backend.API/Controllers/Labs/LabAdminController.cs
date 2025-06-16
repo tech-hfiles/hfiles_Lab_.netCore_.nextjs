@@ -149,7 +149,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 string username = $"{userDetails.user_firstname} {userDetails.user_lastname}";
 
                 var labSignup = await _context.LabSignups
-                    .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email);
+                    .FirstOrDefaultAsync(l => l.Id == dto.UserId && l.Email == dto.Email && l.DeletedBy == 0);
 
                 if (labSignup == null)
                 {
@@ -201,7 +201,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
                 else if (dto.Role == "Admin" || dto.Role == "Member")
                 {
-                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId && m.DeletedBy == 0);
+                    var member = await _context.LabMembers.FirstOrDefaultAsync(m => m.UserId == userDetails.user_id && m.LabId == dto.UserId && m.DeletedBy == 0 && m.Role == dto.Role);
 
                     if (member == null)
                     {
@@ -381,7 +381,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Promotes Admin to Super Admin
         [HttpPost("labs/admin/promote")]
-        [Authorize]
+        [Authorize (Policy = "SuperAdminPolicy")]
         public async Task<IActionResult> PromoteLabMemberToSuperAdmin([FromBody] PromoteAdmin dto)
         {
             HttpContext.Items["Log-Category"] = "Role Management";

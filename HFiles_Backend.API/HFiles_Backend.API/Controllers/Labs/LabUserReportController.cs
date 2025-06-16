@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Security.Claims;
 using HFiles_Backend.API.DTOs.Labs;
 using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
@@ -74,6 +75,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Upload single/batch lab reports of muliple users
         [HttpPost("labs/reports/upload")]
+        [RequestSizeLimit(500_000_000)]
         public async Task<IActionResult> UploadReports([FromForm] UserReportBatchUpload dto)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";
@@ -436,7 +438,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
 
 
-        // Fetch All Distinct Users for All Dates (Currently we do not use this API in Frontend)
+        // Fetch All Distinct Users for All Dates
         [HttpGet("labs/reports/all")]
         public async Task<IActionResult> GetLabUserReports()
         {
@@ -848,7 +850,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 var labAdminIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (labAdminIdClaim == null || !int.TryParse(labAdminIdClaim.Value, out int labAdminId))
                 {

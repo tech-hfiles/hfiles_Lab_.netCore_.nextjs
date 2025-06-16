@@ -127,7 +127,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Reset Password for Labs
         [HttpPut("labs/password-reset")]
-        public async Task<IActionResult> ResetPassword([FromBody] PasswordReset dto)
+        public async Task<IActionResult> ResetPassword([FromBody] PasswordReset dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
 
@@ -138,6 +138,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
                 _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (!otpStore.Consume(dto.Email, "password_reset"))
+            {
+                _logger.LogWarning("Lab Reset Password failed: OTP not verified or already used for Email {Email}", dto.Email);
+                return Unauthorized(ApiResponseFactory.Fail("OTP not verified or already used. Please verify again."));
             }
 
             try
@@ -311,7 +317,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Reset Password for Lab Users
         [HttpPut("labs/users/password-reset")]
-        public async Task<IActionResult> UsersResetPassword([FromBody] UserPasswordReset dto)
+        public async Task<IActionResult> UsersResetPassword([FromBody] UserPasswordReset dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
 
@@ -322,6 +328,12 @@ namespace HFiles_Backend.API.Controllers.Labs
                 var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
                 _logger.LogWarning("Validation failed: {@Errors}", errors);
                 return BadRequest(ApiResponseFactory.Fail(errors));
+            }
+
+            if (!otpStore.Consume(dto.Email, "password_reset"))
+            {
+                _logger.LogWarning("User Reset Password failed: OTP not verified or already used for Email {Email}", dto.Email);
+                return Unauthorized(ApiResponseFactory.Fail("OTP not verified or already used. Please verify again."));
             }
 
             try
@@ -416,7 +428,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Verify OTP for password reset
         [HttpPost("labs/password-reset/verify/otp")]
-        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto)
+        public async Task<IActionResult> BranchVerifyOTP([FromBody] OtpLogin dto, [FromServices] OtpVerificationStore otpStore)
         {
             HttpContext.Items["Log-Category"] = "Authentication";
 
@@ -462,6 +474,8 @@ namespace HFiles_Backend.API.Controllers.Labs
                 _context.LabOtpEntries.RemoveRange(expiredOtps);
                 _context.LabOtpEntries.Remove(otpEntry);
                 await _context.SaveChangesAsync();
+
+                otpStore.StoreVerifiedOtp(dto.Email, "  ");
 
                 _logger.LogInformation("OTP verification successful for Email {Email}", dto.Email);
                 return Ok(ApiResponseFactory.Success("OTP successfully verified."));

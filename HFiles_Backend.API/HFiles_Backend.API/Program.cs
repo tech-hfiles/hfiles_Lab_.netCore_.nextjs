@@ -5,12 +5,15 @@ using HFiles_Backend.API.Settings;
 using HFiles_Backend.Domain.Entities.Labs;
 using HFiles_Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MySqlConnector;
 using Serilog;
+using Microsoft.AspNetCore.Http.Features;
 
 // Configure Serilog at the top
 Log.Logger = new LoggerConfiguration()
@@ -97,6 +100,19 @@ try
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
     builder.Services.AddLogging();
+    builder.Services.AddAuthorizationBuilder()
+      .AddPolicy("SuperAdminPolicy", policy => policy.RequireRole("Super Admin"))
+      .AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"))
+      .AddPolicy("MemberPolicy", policy => policy.RequireRole("Member"))
+      .AddPolicy("SuperAdminOrAdminPolicy", policy => policy.RequireRole("Super Admin","Admin"));
+    builder.Services.AddMemoryCache();
+    builder.Services.AddSingleton<OtpVerificationStore>();
+    builder.Services.Configure<FormOptions>(options =>
+    {
+        options.MultipartBodyLengthLimit = 1024 * 1024 * 500; 
+    });
+
+
 
     // Swagger + JWT
     builder.Services.AddSwaggerGen(options =>
@@ -136,6 +152,7 @@ try
     builder.Services.AddScoped<LabAuthorizationService>();
     builder.Services.AddScoped<LocationService>();
     builder.Services.AddScoped<S3StorageService>();
+    builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, RoleBasedAuthorization>();
 
 
     // DbContext

@@ -1,4 +1,5 @@
-﻿using HFiles_Backend.API.Services;
+﻿using System.Security.Claims;
+using HFiles_Backend.API.Services;
 using HFiles_Backend.Application.Common;
 using HFiles_Backend.Application.DTOs.Labs;
 using HFiles_Backend.Domain.Entities.Labs;
@@ -25,7 +26,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Create Member
         [HttpPost("labs/members")]
-        [Authorize]
+        [Authorize (Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> AddMember([FromBody] CreateMember dto)
         {
             HttpContext.Items["Log-Category"] = "User Management";
@@ -136,7 +137,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Promote Members to Admins API
         [HttpPost("labs/members/promote")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> PromoteLabMembers([FromBody] PromoteMembersRequest dto)
         {
             HttpContext.Items["Log-Category"] = "Role Management";
@@ -179,7 +180,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                     return Unauthorized(ApiResponseFactory.Fail("Invalid or missing LabAdminId in token."));
                 }
 
-                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
                 if (roleClaim == null)
                 {
                     _logger.LogWarning("Promotion failed: Invalid or missing Role in token.");
@@ -269,7 +270,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Delete member
         [HttpPut("labs/members/{memberId}")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> DeleteLabMember([FromRoute] int memberId)
         {
             HttpContext.Items["Log-Category"] = "User Management";
@@ -318,7 +319,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 var deletedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (deletedByIdClaim == null || deletedByRoleClaim == null ||
                     !int.TryParse(deletedByIdClaim.Value, out int deletedById))
@@ -468,7 +469,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Revert Deleted Users
         [HttpPatch("labs/revert-user")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> RevertDeletedUser([FromBody] RevertUser dto)
         {
             HttpContext.Items["Log-Category"] = "User Management";
@@ -494,7 +495,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 var revertedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var revertedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (revertedByIdClaim == null || revertedByIdClaim == null ||
                     !int.TryParse(revertedByIdClaim.Value, out int revertedById))
@@ -577,7 +578,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Permanently Removes User
         [HttpDelete("labs/remove-user")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminPolicy")]
         public async Task<IActionResult> PermanentlyDeleteUser([FromBody] DeleteUser dto)
         {
             HttpContext.Items["Log-Category"] = "User Management";
@@ -600,7 +601,7 @@ namespace HFiles_Backend.API.Controllers.Labs
                 }
 
                 var deletedByIdClaim = User.Claims.FirstOrDefault(c => c.Type == "LabAdminId");
-                var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == "Role");
+                var deletedByRoleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role);
 
                 if (deletedByIdClaim == null || deletedByIdClaim == null ||
                     !int.TryParse(deletedByIdClaim.Value, out int deletedById))

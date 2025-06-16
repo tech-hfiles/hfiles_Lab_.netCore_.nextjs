@@ -156,7 +156,7 @@ namespace HFiles_Backend.API.Controllers.Labs
 
         // Update Address and Profile Photo for Lab
         [HttpPatch("labs/update")]
-        [Authorize]
+        [Authorize(Policy = "SuperAdminOrAdminPolicy")]
         public async Task<IActionResult> UpdateLabUserProfile([FromForm] ProfileUpdate dto, IFormFile? ProfilePhoto)
         {
             HttpContext.Items["Log-Category"] = "Lab Management";

@@ -55,7 +55,7 @@ namespace HFiles_Backend.API.Services
                     new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                     new("UserId", userId.ToString()),
                     new("LabAdminId", labAdminId.ToString()),
-                    new("Role", role),
+                    new(ClaimTypes.Role, role),
                     new("SessionId", sessionId),
                     new("iat", issuedAt.ToString()),
                     new("exp", expiration.ToString())
